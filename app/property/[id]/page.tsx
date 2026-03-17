@@ -31,6 +31,7 @@ type Property = {
 
 type Review = {
   id: string
+  user_id: string
   overall_rating: number
   ease_of_interaction: number
   payment_timeliness: number
@@ -117,7 +118,6 @@ export default function PropertyDetailPage() {
 
   useEffect(() => {
     const load = async () => {
-      // Verify user is active
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
 
@@ -132,7 +132,6 @@ export default function PropertyDetailPage() {
         return
       }
 
-      // Load property
       const { data: propertyData, error: propertyError } = await supabase
         .from('properties')
         .select('*')
@@ -146,11 +145,10 @@ export default function PropertyDetailPage() {
 
       setProperty(propertyData)
 
-      // Load reviews
       const { data: reviewData } = await supabase
         .from('reviews')
         .select(`
-          id, overall_rating, ease_of_interaction, payment_timeliness,
+          id, user_id, overall_rating, ease_of_interaction, payment_timeliness,
           paid_on_time, no_call_no_show, change_order_count,
           job_size, job_value, job_description, job_completed_at,
           title, body, created_at,
@@ -164,11 +162,7 @@ export default function PropertyDetailPage() {
 
       if (reviewData) {
         setReviews(reviewData as unknown as Review[])
-
-        // Check if current user already left a review
-        const userReview = reviewData.find(
-          (r: any) => r.user_id === user.id
-        )
+        const userReview = reviewData.find((r) => r.user_id === user.id)
         setUserReviewExists(!!userReview)
       }
 
