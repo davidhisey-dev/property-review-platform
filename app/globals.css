@@ -41,13 +41,32 @@
   --radius-lg:   12px;
   --radius-xl:   16px;
   --radius-full: 9999px;
+
+  /* Spacing for mobile safe areas */
+  --safe-area-top:    env(safe-area-inset-top);
+  --safe-area-bottom: env(safe-area-inset-bottom);
 }
 
 @layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--color-neutral-50);
     color: var(--color-neutral-800);
     font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+    /* Prevents horizontal scroll on mobile */
+    overflow-x: hidden;
+    /* Smooth scrolling on iOS */
+    -webkit-overflow-scrolling: touch;
   }
 
   h1 {
@@ -87,13 +106,38 @@
     border-radius: var(--radius-md);
     color: var(--color-neutral-800);
     background-color: white;
+    /* Prevents iOS zoom on focus - must be 16px or larger */
     font-size: 1rem;
+    /* Removes iOS default styling */
+    -webkit-appearance: none;
+    appearance: none;
   }
 
   input:focus, select:focus {
     outline: none;
     border-color: var(--color-primary-500);
     box-shadow: 0 0 0 2px var(--color-primary-100);
+  }
+
+  /* Prevents iOS blue highlight on tap */
+  button {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* Makes images responsive by default */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Safe area padding for notched phones (iPhone X and later) */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
   }
 }
 
@@ -110,6 +154,8 @@
     border: none;
     cursor: pointer;
     transition: background-color 0.2s;
+    /* Minimum touch target size for mobile - 44px */
+    min-height: 44px;
   }
 
   .btn-primary:hover {
@@ -133,6 +179,7 @@
     border: 1px solid var(--color-primary-600);
     cursor: pointer;
     transition: background-color 0.2s;
+    min-height: 44px;
   }
 
   .btn-secondary:hover {
@@ -151,6 +198,7 @@
     border: none;
     cursor: pointer;
     transition: background-color 0.2s;
+    min-height: 44px;
   }
 
   .btn-danger:hover {
@@ -186,5 +234,21 @@
     color: #15803d;
     padding: 0.75rem 1rem;
     border-radius: var(--radius-md);
+  }
+
+  /* Mobile-friendly page wrapper */
+  .page-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem;
+  }
+
+  /* Full width on mobile, constrained on desktop */
+  .page-container-wide {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1.5rem 1rem;
   }
 }
