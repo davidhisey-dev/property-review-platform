@@ -13,6 +13,7 @@ const DEFAULT_VIEW = {
 }
 
 type Property = {
+  id?: string
   parcel_number: string
   address_full: string
   city: string
@@ -59,11 +60,28 @@ export default function PropertyMap({
     }
   }, [])
 
-  const handleSelectProperty = useCallback(() => {
-    if (selectedProperty && onPropertySelect) {
+  const handleSelectProperty = useCallback(async () => {
+  if (!selectedProperty) return
+
+  try {
+    const res = await fetch('/api/property/cache', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(selectedProperty),
+    })
+
+    const data = await res.json()
+
+    if (data.id && onPropertySelect) {
+      onPropertySelect({ ...selectedProperty, id: data.id })
+    }
+  } catch {
+    // If caching fails still proceed with property data
+    if (onPropertySelect) {
       onPropertySelect(selectedProperty)
     }
-  }, [selectedProperty, onPropertySelect])
+  }
+}, [selectedProperty, onPropertySelect])
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return

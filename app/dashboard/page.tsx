@@ -34,8 +34,10 @@ export default function DashboardPage() {
         <PropertyMap
           height="100%"
           onPropertySelect={(property) => {
-            console.log('Selected property:', property)
-          }}
+            if (property.id) {
+                router.push(`/property/${property.id}`)
+            }
+            }}
         />
       </div>
     </div>
