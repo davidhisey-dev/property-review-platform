@@ -82,8 +82,9 @@ export default function NavBar() {
 
       {/* Center — navigation links */}
       <div style={{ display: 'flex', gap: '0.25rem' }}>
-        {navItem('Map', '/dashboard')}
-        {isAdmin && navItem('Admin', '/admin')}
+            {navItem('Map', '/dashboard')}
+            {navItem('Account', '/account')}
+            {isAdmin && navItem('Admin', '/admin')}
       </div>
 
       {/* Right — user name and sign out */}
