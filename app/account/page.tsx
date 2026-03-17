@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import NavBar from '@/components/NavBar'
@@ -107,6 +107,24 @@ function ReadOnlyField({ value }: { value: string }) {
   )
 }
 
+function getLicenseStatusLabel(status: string) {
+  const map: Record<string, { label: string; color: string }> = {
+    pending:  { label: 'Pending Review', color: '#d97706' },
+    verified: { label: 'Verified',       color: '#16a34a' },
+    rejected: { label: 'Rejected',       color: '#dc2626' },
+  }
+  return map[status] || { label: status, color: '#6b7280' }
+}
+
+function formatDate(val: string | null) {
+  if (!val) return 'Not verified'
+  return new Date(val).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
+}
+
 export default function AccountPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -117,6 +135,7 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [error, setError] = useState('')
+  const originalLicenseRef = useRef('')
 
   const [form, setForm] = useState<FormState>({
     display_name: '',
@@ -144,6 +163,8 @@ export default function AccountPage() {
       if (!profileData.is_active) { router.push('/pending'); return }
 
       setProfile(profileData)
+      originalLicenseRef.current = profileData.license_number || ''
+
       setForm({
         display_name:        profileData.display_name || '',
         company_name:        profileData.company_name || '',
@@ -206,6 +227,8 @@ export default function AccountPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/'); return }
 
+    const licenseChanged = form.license_number.trim() !== originalLicenseRef.current
+
     const { error: updateError } = await supabase
       .from('users')
       .update({
@@ -220,6 +243,10 @@ export default function AccountPage() {
         insurance_expiry:    form.insurance_expiry,
         language_preference: form.language_preference,
         updated_at:          new Date().toISOString(),
+        ...(licenseChanged && {
+          license_status:      'pending',
+          license_verified_at: null,
+        }),
       })
       .eq('id', user.id)
 
@@ -230,29 +257,29 @@ export default function AccountPage() {
       return
     }
 
+    // Update ref to new license number after successful save
+    if (licenseChanged) {
+      originalLicenseRef.current = form.license_number.trim()
+    }
+
+    // Update local profile state
+    if (profile) {
+      setProfile({
+        ...profile,
+        ...form,
+        business_type_id: form.business_type_id
+          ? parseInt(form.business_type_id)
+          : null,
+        ...(licenseChanged && {
+          license_status:      'pending',
+          license_verified_at: null,
+        }),
+      })
+    }
+
     setSaveSuccess(true)
     setSaving(false)
-
-    // Clear success message after 3 seconds
     setTimeout(() => setSaveSuccess(false), 3000)
-  }
-
-  const formatDate = (val: string | null) => {
-    if (!val) return 'Not verified'
-    return new Date(val).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
-  }
-
-  const getLicenseStatusLabel = (status: string) => {
-    const map: Record<string, { label: string; color: string }> = {
-      pending:  { label: 'Pending Review', color: '#d97706' },
-      verified: { label: 'Verified',       color: '#16a34a' },
-      rejected: { label: 'Rejected',       color: '#dc2626' },
-    }
-    return map[status] || { label: status, color: '#6b7280' }
   }
 
   if (loading) {
