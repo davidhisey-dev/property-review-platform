@@ -12,11 +12,14 @@
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
+    "@types/mapbox-gl": "^3.4.1",
     "autoprefixer": "^10.4.27",
+    "mapbox-gl": "^3.20.0",
     "next": "16.1.6",
     "postcss": "^8.5.8",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-map-gl": "^8.1.0",
     "resend": "^6.9.3"
   },
   "devDependencies": {

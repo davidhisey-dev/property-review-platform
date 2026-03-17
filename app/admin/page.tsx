@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import NavBar from '@/components/NavBar'
 
 
 type Contractor = {
@@ -204,13 +205,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-neutral-50">
 
       {/* Header */}
-      <div style={{
-        backgroundColor: 'var(--color-primary-600)',
-        padding: '1rem 2rem',
-        color: 'white',
-      }}>
-        <h1 style={{ color: 'white', margin: 0 }}>Admin Dashboard</h1>
-      </div>
+        <NavBar />
 
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem' }}>
 
