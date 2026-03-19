@@ -191,9 +191,16 @@ export default function PropertyDetailPage() {
 
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem 1rem' }}>
 
-        {/* Back button */}
+{/* Back button */}
         <button
-          onClick={() => router.push('/dashboard')}
+          onClick={() => {
+            const dashboardUrl = sessionStorage.getItem('dashboardUrl')
+            if (dashboardUrl) {
+              router.push(dashboardUrl)
+            } else {
+              router.push('/dashboard')
+            }
+          }}
           style={{
             display: 'flex',
             alignItems: 'center',

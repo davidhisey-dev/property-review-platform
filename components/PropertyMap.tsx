@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import Map, { Marker, Popup, NavigationControl, GeolocateControl } from 'react-map-gl/mapbox'
 import type { MapRef } from 'react-map-gl/mapbox'
 
@@ -34,20 +34,38 @@ type Property = {
 
 type Props = {
   onPropertySelect?: (property: Property) => void
+  onSearchChange?: (query: string, lat: number, lng: number, zoom: number) => void
+  initialQuery?: string
+  initialLat?: number
+  initialLng?: number
+  initialZoom?: number
   height?: string
 }
 
 export default function PropertyMap({
   onPropertySelect,
+  onSearchChange,
+  initialQuery = '',
+  initialLat,
+  initialLng,
+  initialZoom,
   height = '500px',
 }: Props) {
   const mapRef = useRef<MapRef>(null)
-  const [viewState, setViewState] = useState(DEFAULT_VIEW)
+  const [viewState, setViewState] = useState({
+    longitude: initialLng ?? DEFAULT_VIEW.longitude,
+    latitude: initialLat ?? DEFAULT_VIEW.latitude,
+    zoom: initialZoom ?? DEFAULT_VIEW.zoom,
+  })
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
+  const [searchQuery, setSearchQuery] = useState(initialQuery)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const hasRestoredSearch = useRef(false)
+  const handleSearchRef = useRef<(query?: string, skipGeocode?: boolean) => Promise<void>>(
+    async () => {}
+  )
 
   const handleMarkerClick = useCallback((property: Property) => {
     setSelectedProperty(property)
@@ -61,39 +79,39 @@ export default function PropertyMap({
   }, [])
 
   const handleSelectProperty = useCallback(async () => {
-  if (!selectedProperty) return
+    if (!selectedProperty) return
 
-  try {
-    const res = await fetch('/api/property/cache', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(selectedProperty),
-    })
+    try {
+      const res = await fetch('/api/property/cache', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedProperty),
+      })
 
-    const data = await res.json()
+      const data = await res.json()
 
-    if (data.id && onPropertySelect) {
-      onPropertySelect({ ...selectedProperty, id: data.id })
+      if (data.id && onPropertySelect) {
+        onPropertySelect({ ...selectedProperty, id: data.id })
+      }
+    } catch {
+      if (onPropertySelect) {
+        onPropertySelect(selectedProperty)
+      }
     }
-  } catch {
-    // If caching fails still proceed with property data
-    if (onPropertySelect) {
-      onPropertySelect(selectedProperty)
-    }
-  }
-}, [selectedProperty, onPropertySelect])
+  }, [selectedProperty, onPropertySelect])
 
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return
+  const handleSearch = useCallback(async (queryOverride?: string, skipGeocode?: boolean) => {
+    const query = queryOverride ?? searchQuery
+    if (!query.trim()) return
+
     setSearching(true)
     setSearchError('')
     setSelectedProperty(null)
     setProperties([])
 
     try {
-      // Step 1 — Geocode the address with Mapbox to get coordinates
-      const query = encodeURIComponent(`${searchQuery}, King County, Washington`)
-      const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${MAPBOX_TOKEN}&country=US&proximity=-122.3321,47.6062&types=address`
+      const encodedQuery = encodeURIComponent(`${query}, King County, Washington`)
+      const geocodeUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodedQuery}.json?access_token=${MAPBOX_TOKEN}&country=US&proximity=-122.3321,47.6062&types=address`
 
       const geocodeRes = await fetch(geocodeUrl)
       const geocodeData = await geocodeRes.json()
@@ -106,18 +124,16 @@ export default function PropertyMap({
 
       const [longitude, latitude] = geocodeData.features[0].center
 
-      // Fly map to the geocoded location immediately
-      mapRef.current?.flyTo({
-        center: [longitude, latitude],
-        zoom: 16,
-        duration: 1000,
-      })
+      if (!skipGeocode) {
+        mapRef.current?.flyTo({
+          center: [longitude, latitude],
+          zoom: 16,
+          duration: 1000,
+        })
+      }
 
-      // Step 2 — Query King County API with the address text
-      // Use the place_name from Mapbox which gives us a clean address
-      const placeName = geocodeData.features[0].place_name
       const kcRes = await fetch(
-        `/api/property/search?address=${encodeURIComponent(searchQuery)}`
+        `/api/property/search?address=${encodeURIComponent(query)}`
       )
       const kcData = await kcRes.json()
 
@@ -127,28 +143,37 @@ export default function PropertyMap({
         return
       }
 
-      // Normalize to array whether single or multiple results
       const results: Property[] = kcData.property
         ? [kcData.property]
         : kcData.properties || []
 
-      // Filter to only properties with coordinates
       const withCoords = results.filter(
         (p) => p.latitude && p.longitude
       )
 
       setProperties(withCoords)
+      sessionStorage.setItem('lastSearchResults', JSON.stringify(withCoords))
+      sessionStorage.setItem('lastSearchQuery', query)
 
-      // If only one result auto-select it
       if (withCoords.length === 1) {
         setSelectedProperty(withCoords[0])
-        mapRef.current?.flyTo({
-          center: [withCoords[0].longitude!, withCoords[0].latitude!],
-          zoom: 17,
-          duration: 800,
-        })
+        if (!skipGeocode) {
+          mapRef.current?.flyTo({
+            center: [withCoords[0].longitude!, withCoords[0].latitude!],
+            zoom: 17,
+            duration: 800,
+          })
+        }
+        const params = new URLSearchParams()
+        params.set('q', query)
+        params.set('lat', withCoords[0].latitude!.toString())
+        params.set('lng', withCoords[0].longitude!.toString())
+        params.set('zoom', '17')
+        window.history.replaceState(null, '', `/dashboard?${params.toString()}`)
+        if (onSearchChange) {
+          onSearchChange(query, withCoords[0].latitude!, withCoords[0].longitude!, 17)
+        }
       } else if (withCoords.length > 1) {
-        // Fit map to show all markers
         const lngs = withCoords.map((p) => p.longitude!)
         const lats = withCoords.map((p) => p.latitude!)
         const minLng = Math.min(...lngs)
@@ -156,10 +181,23 @@ export default function PropertyMap({
         const minLat = Math.min(...lats)
         const maxLat = Math.max(...lats)
 
-        mapRef.current?.fitBounds(
-          [[minLng, minLat], [maxLng, maxLat]],
-          { padding: 80, duration: 1000, maxZoom: 17 }
-        )
+        if (!skipGeocode) {
+          mapRef.current?.fitBounds(
+            [[minLng, minLat], [maxLng, maxLat]],
+            { padding: 80, duration: 1000, maxZoom: 14 }
+          )
+        }
+        const centerLat = (minLat + maxLat) / 2
+        const centerLng = (minLng + maxLng) / 2
+        const params = new URLSearchParams()
+        params.set('q', query)
+        params.set('lat', centerLat.toString())
+        params.set('lng', centerLng.toString())
+        params.set('zoom', '14')
+        window.history.replaceState(null, '', `/dashboard?${params.toString()}`)
+        if (onSearchChange) {
+          onSearchChange(query, centerLat, centerLng, 14)
+        }
       }
 
     } catch {
@@ -167,7 +205,61 @@ export default function PropertyMap({
     }
 
     setSearching(false)
-  }, [searchQuery])
+  }, [searchQuery, onSearchChange])
+
+  // Keep ref pointing to latest handleSearch without triggering render
+  useEffect(() => {
+    handleSearchRef.current = handleSearch
+  })
+
+  // Restore search from URL params on first load
+  useEffect(() => {
+    if (hasRestoredSearch.current) return
+    if (!initialQuery) return
+    hasRestoredSearch.current = true
+    setTimeout(() => setSearchQuery(initialQuery), 0)
+
+    const cachedQuery = sessionStorage.getItem('lastSearchQuery')
+    const cachedResults = sessionStorage.getItem('lastSearchResults')
+
+if (cachedQuery === initialQuery && cachedResults) {
+      try {
+        const restored = JSON.parse(cachedResults) as Property[]
+            setTimeout(() => {
+            setProperties(restored)
+          if (restored.length === 1) {
+            setSelectedProperty(restored[0])
+            mapRef.current?.jumpTo({
+              center: [restored[0].longitude!, restored[0].latitude!],
+              zoom: 15,
+            })
+          } else if (restored.length > 1) {
+            const lngs = restored.map((p) => p.longitude!)
+            const lats = restored.map((p) => p.latitude!)
+            mapRef.current?.fitBounds(
+              [
+                [Math.min(...lngs), Math.min(...lats)],
+                [Math.max(...lngs), Math.max(...lats)],
+              ],
+              { padding: 80, maxZoom: 14 }
+            )
+          }
+        }, 0)
+        return
+      } catch {
+        // Fall through to fresh search
+      }
+    }
+
+    // No cache — fresh search after map mounts
+    const interval = setInterval(() => {
+      if (mapRef.current) {
+        clearInterval(interval)
+        handleSearchRef.current(initialQuery, true)
+      }
+    }, 100)
+    setTimeout(() => clearInterval(interval), 5000)
+  }, [initialQuery])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') handleSearch()
@@ -209,7 +301,7 @@ export default function PropertyMap({
           }}
         />
         <button
-          onClick={handleSearch}
+          onClick={() => handleSearch()}
           disabled={searching}
           style={{
             padding: '0.75rem 1.25rem',
@@ -271,7 +363,11 @@ export default function PropertyMap({
       {/* Map */}
       <Map
         ref={mapRef}
-        {...viewState}
+        initialViewState={{
+          longitude: initialLng ?? DEFAULT_VIEW.longitude,
+          latitude: initialLat ?? DEFAULT_VIEW.latitude,
+          zoom: initialZoom ?? DEFAULT_VIEW.zoom,
+        }}
         onMove={(e) => setViewState(e.viewState)}
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
