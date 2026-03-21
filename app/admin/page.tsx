@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { useProfile } from '@/lib/useProfile'
 import NavBar from '@/components/NavBar'
 
 
@@ -27,6 +28,7 @@ type Tab = 'pending' | 'active' | 'suspended' | 'rejected'
 export default function AdminPage() {
   const router = useRouter()
   const supabase = createClient()
+  const { profile: navProfile } = useProfile()
 
   const [loading, setLoading] = useState(true)
   const [contractors, setContractors] = useState<Contractor[]>([])
@@ -205,7 +207,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-neutral-50">
 
       {/* Header */}
-        <NavBar />
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
 
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem' }}>
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
+import { useProfile } from '@/lib/useProfile'
 import NavBar from '@/components/NavBar'
 
 type Property = {
@@ -106,6 +107,7 @@ function formatDate(val: string | null) {
 }
 
 export default function PropertyDetailPage() {
+  const { profile: navProfile } = useProfile()
   const router = useRouter()
   const params = useParams()
   const id = params.id as string
@@ -175,7 +177,7 @@ export default function PropertyDetailPage() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <NavBar />
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
         <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
           Loading property...
         </div>
@@ -187,7 +189,8 @@ export default function PropertyDetailPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-      <NavBar />
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+
 
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem 1rem' }}>
 

@@ -1,37 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
 import { useRouter, usePathname } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 
-export default function NavBar() {
+type Props = {
+  isAdmin?: boolean
+  displayName?: string
+}
+
+export default function NavBar({ isAdmin = false, displayName = '' }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const [isAdmin, setIsAdmin] = useState(false)
-  const [name, setName] = useState('')
-
-  useEffect(() => {
-    const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const { data: profile } = await supabase
-        .from('users')
-        .select('display_name, is_admin')
-        .eq('id', user.id)
-        .single()
-
-      if (profile) {
-        setName(profile.display_name)
-        setIsAdmin(profile.is_admin)
-      }
-    }
-    load()
-  }, [supabase])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
+    sessionStorage.removeItem('userProfile')
+    sessionStorage.removeItem('dashboardUrl')
+    sessionStorage.removeItem('lastSearchResults')
+    sessionStorage.removeItem('lastSearchQuery')
     router.push('/')
   }
 
@@ -69,12 +56,13 @@ export default function NavBar() {
       flexShrink: 0,
     }}>
       {/* Left — app name */}
-      <span style={{
-        fontWeight: '700',
-        fontSize: '1rem',
-        color: 'white',
-        cursor: 'pointer',
-      }}
+      <span
+        style={{
+          fontWeight: '700',
+          fontSize: '1rem',
+          color: 'white',
+          cursor: 'pointer',
+        }}
         onClick={() => router.push('/dashboard')}
       >
         PropReview
@@ -82,9 +70,9 @@ export default function NavBar() {
 
       {/* Center — navigation links */}
       <div style={{ display: 'flex', gap: '0.25rem' }}>
-            {navItem('Map', '/dashboard')}
-            {navItem('Account', '/account')}
-            {isAdmin && navItem('Admin', '/admin')}
+        {navItem('Map', '/dashboard')}
+        {navItem('Account', '/account')}
+        {isAdmin && navItem('Admin', '/admin')}
       </div>
 
       {/* Right — user name and sign out */}
@@ -93,15 +81,14 @@ export default function NavBar() {
         alignItems: 'center',
         gap: '0.75rem',
       }}>
-        <span style={{
-          fontSize: '0.875rem',
-          opacity: 0.85,
-          display: 'none',
-        }}
-          className="sm:block"
-        >
-          {name}
-        </span>
+        {displayName && (
+          <span style={{
+            fontSize: '0.875rem',
+            opacity: 0.85,
+          }}>
+            {displayName}
+          </span>
+        )}
         <button
           onClick={handleSignOut}
           style={{

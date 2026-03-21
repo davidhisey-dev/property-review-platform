@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import NavBar from '@/components/NavBar'
+import { useProfile } from '@/lib/useProfile'
 
 type ChecklistItem = {
   id: number
@@ -108,6 +109,7 @@ export default function ReviewPage() {
   const params = useParams()
   const id = params.id as string
   const supabase = createClient()
+  const { profile: navProfile } = useProfile()
 
   const [propertyAddress, setPropertyAddress] = useState('')
   const [paymentTactics, setPaymentTactics] = useState<ChecklistItem[]>([])
@@ -297,7 +299,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <NavBar />
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
         <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
           Loading...
         </div>
@@ -316,7 +318,7 @@ export default function ReviewPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-      <NavBar />
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
 
       <div style={{ maxWidth: '700px', margin: '0 auto', padding: '1.5rem 1rem' }}>
 

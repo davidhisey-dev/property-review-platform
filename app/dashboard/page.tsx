@@ -5,11 +5,15 @@ import { createClient } from '@/lib/supabase'
 import { useRouter, useSearchParams } from 'next/navigation'
 import PropertyMap from '@/components/PropertyMap'
 import NavBar from '@/components/NavBar'
+import { useProfile } from '@/lib/useProfile'
+
 
 export default function DashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = createClient()
+
+const { profile: navProfile } = useProfile()
 
   useEffect(() => {
     const check = async () => {
@@ -71,8 +75,7 @@ const handlePropertySelect = useCallback(async (property: MapProperty) => {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <NavBar />
-      <div style={{ flex: 1 }}>
+<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />      <div style={{ flex: 1 }}>
         <PropertyMap
           height="100%"
           initialQuery={searchParams.get('q') || ''}
