@@ -14,22 +14,25 @@ const PROFILE_KEY = 'userProfile'
 export function useProfile() {
   const router = useRouter()
   const supabase = createClient()
-
-  // Try to load from sessionStorage immediately
-  const getCached = (): Profile | null => {
-    if (typeof window === 'undefined') return null
-    try {
-      const cached = sessionStorage.getItem(PROFILE_KEY)
-      return cached ? JSON.parse(cached) : null
-    } catch {
-      return null
-    }
-  }
-
-  const [profile, setProfile] = useState<Profile | null>(getCached)
-  const [loading, setLoading] = useState(!getCached())
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Try cache first
+    const cached = sessionStorage.getItem(PROFILE_KEY)
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached)
+        setTimeout(() => {
+          setProfile(parsed)
+          setLoading(false)
+        }, 0)
+      } catch {
+        sessionStorage.removeItem(PROFILE_KEY)
+      }
+    }
+
+    // Always fetch fresh from Supabase to keep cache current
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
@@ -46,6 +49,7 @@ export function useProfile() {
       }
       setLoading(false)
     }
+
     load()
   }, [router, supabase])
 

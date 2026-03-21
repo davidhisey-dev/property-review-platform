@@ -52,16 +52,12 @@ export default function PropertyMap({
   height = '500px',
 }: Props) {
   const mapRef = useRef<MapRef>(null)
-  const [viewState, setViewState] = useState({
-    longitude: initialLng ?? DEFAULT_VIEW.longitude,
-    latitude: initialLat ?? DEFAULT_VIEW.latitude,
-    zoom: initialZoom ?? DEFAULT_VIEW.zoom,
-  })
   const [properties, setProperties] = useState<Property[]>([])
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [searchQuery, setSearchQuery] = useState(initialQuery)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
+  const [reviewCounts, setReviewCounts] = useState<Record<string, number>>({})
   const hasRestoredSearch = useRef(false)
   const handleSearchRef = useRef<(query?: string, skipGeocode?: boolean) => Promise<void>>(
     async () => {}
@@ -80,16 +76,13 @@ export default function PropertyMap({
 
   const handleSelectProperty = useCallback(async () => {
     if (!selectedProperty) return
-
     try {
       const res = await fetch('/api/property/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(selectedProperty),
       })
-
       const data = await res.json()
-
       if (data.id && onPropertySelect) {
         onPropertySelect({ ...selectedProperty, id: data.id })
       }
@@ -123,14 +116,7 @@ export default function PropertyMap({
       }
 
       const [longitude, latitude] = geocodeData.features[0].center
-
-      if (!skipGeocode) {
-        mapRef.current?.flyTo({
-          center: [longitude, latitude],
-          zoom: 16,
-          duration: 1000,
-        })
-      }
+      const geocodedCenter: [number, number] = [longitude, latitude]
 
       const kcRes = await fetch(
         `/api/property/search?address=${encodeURIComponent(query)}`
@@ -147,13 +133,28 @@ export default function PropertyMap({
         ? [kcData.property]
         : kcData.properties || []
 
-      const withCoords = results.filter(
-        (p) => p.latitude && p.longitude
-      )
+      const withCoords = results.filter((p) => p.latitude && p.longitude)
 
       setProperties(withCoords)
       sessionStorage.setItem('lastSearchResults', JSON.stringify(withCoords))
       sessionStorage.setItem('lastSearchQuery', query)
+
+      // Fetch review counts
+      if (withCoords.length > 0) {
+        try {
+          const countsRes = await fetch('/api/reviews/counts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              parcel_numbers: withCoords.map((p) => p.parcel_number),
+            }),
+          })
+          const countsData = await countsRes.json()
+          if (countsData.counts) setReviewCounts(countsData.counts)
+        } catch {
+          // Supplemental — don't fail search
+        }
+      }
 
       if (withCoords.length === 1) {
         setSelectedProperty(withCoords[0])
@@ -162,6 +163,12 @@ export default function PropertyMap({
             center: [withCoords[0].longitude!, withCoords[0].latitude!],
             zoom: 17,
             duration: 800,
+          })
+        } else if (!initialLat) {
+          mapRef.current?.flyTo({
+            center: geocodedCenter,
+            zoom: 16,
+            duration: 0,
           })
         }
         const params = new URLSearchParams()
@@ -181,12 +188,11 @@ export default function PropertyMap({
         const minLat = Math.min(...lats)
         const maxLat = Math.max(...lats)
 
-        if (!skipGeocode) {
-          mapRef.current?.fitBounds(
-            [[minLng, minLat], [maxLng, maxLat]],
-            { padding: 80, duration: 1000, maxZoom: 14 }
-          )
-        }
+        mapRef.current?.fitBounds(
+          [[minLng, minLat], [maxLng, maxLat]],
+          { padding: 80, duration: skipGeocode ? 0 : 800, maxZoom: 14 }
+        )
+
         const centerLat = (minLat + maxLat) / 2
         const centerLng = (minLng + maxLng) / 2
         const params = new URLSearchParams()
@@ -205,9 +211,9 @@ export default function PropertyMap({
     }
 
     setSearching(false)
-  }, [searchQuery, onSearchChange])
+  }, [searchQuery, onSearchChange, initialLat])
 
-  // Keep ref pointing to latest handleSearch without triggering render
+  // Keep ref pointing to latest handleSearch
   useEffect(() => {
     handleSearchRef.current = handleSearch
   })
@@ -222,12 +228,18 @@ export default function PropertyMap({
     const cachedQuery = sessionStorage.getItem('lastSearchQuery')
     const cachedResults = sessionStorage.getItem('lastSearchResults')
 
-if (cachedQuery === initialQuery && cachedResults) {
+    if (cachedQuery === initialQuery && cachedResults) {
       try {
         const restored = JSON.parse(cachedResults) as Property[]
-            setTimeout(() => {
-            setProperties(restored)
-          if (restored.length === 1) {
+        setTimeout(() => {
+          setProperties(restored)
+          setReviewCounts({})
+          if (initialLat && initialLng && initialZoom) {
+            mapRef.current?.jumpTo({
+              center: [initialLng, initialLat],
+              zoom: initialZoom,
+            })
+          } else if (restored.length === 1) {
             setSelectedProperty(restored[0])
             mapRef.current?.jumpTo({
               center: [restored[0].longitude!, restored[0].latitude!],
@@ -251,7 +263,6 @@ if (cachedQuery === initialQuery && cachedResults) {
       }
     }
 
-    // No cache — fresh search after map mounts
     const interval = setInterval(() => {
       if (mapRef.current) {
         clearInterval(interval)
@@ -259,7 +270,7 @@ if (cachedQuery === initialQuery && cachedResults) {
       }
     }, 100)
     setTimeout(() => clearInterval(interval), 5000)
-  }, [initialQuery])
+  }, [initialQuery, initialLat, initialLng, initialZoom])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') handleSearch()
@@ -362,13 +373,14 @@ if (cachedQuery === initialQuery && cachedResults) {
 
       {/* Map */}
       <Map
+        key={`${initialLng ?? 'default'}-${initialLat ?? 'default'}-${initialZoom ?? 'default'}`}
         ref={mapRef}
         initialViewState={{
           longitude: initialLng ?? DEFAULT_VIEW.longitude,
           latitude: initialLat ?? DEFAULT_VIEW.latitude,
           zoom: initialZoom ?? DEFAULT_VIEW.zoom,
         }}
-        onMove={(e) => setViewState(e.viewState)}
+        onMove={() => {}}
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/streets-v12"
         mapboxAccessToken={MAPBOX_TOKEN}
@@ -415,44 +427,61 @@ if (cachedQuery === initialQuery && cachedResults) {
             closeOnClick={false}
           >
             <div style={{ padding: '0.5rem', minWidth: '220px' }}>
-              <p style={{
-                fontWeight: '600',
-                margin: '0 0 0.5rem',
-                fontSize: '0.875rem',
-                lineHeight: '1.3',
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '0.5rem',
               }}>
-                {selectedProperty.address_full}
-              </p>
-              <p style={{
-                color: '#6b7280',
-                margin: '0 0 0.25rem',
-                fontSize: '0.8rem',
-              }}>
+                <p style={{
+                  fontWeight: '600',
+                  margin: 0,
+                  fontSize: '0.875rem',
+                  lineHeight: '1.3',
+                  flex: 1,
+                }}>
+                  {selectedProperty.address_full}
+                </p>
+                {reviewCounts[selectedProperty.parcel_number] > 0 ? (
+                  <span style={{
+                    marginLeft: '0.5rem',
+                    backgroundColor: '#dbeafe',
+                    color: '#1d4ed8',
+                    padding: '0.1rem 0.5rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}>
+                    {reviewCounts[selectedProperty.parcel_number]} review{reviewCounts[selectedProperty.parcel_number] !== 1 ? 's' : ''}
+                  </span>
+                ) : (
+                  <span style={{
+                    marginLeft: '0.5rem',
+                    backgroundColor: '#f3f4f6',
+                    color: '#9ca3af',
+                    padding: '0.1rem 0.5rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}>
+                    No reviews
+                  </span>
+                )}
+              </div>
+              <p style={{ color: '#6b7280', margin: '0 0 0.25rem', fontSize: '0.8rem' }}>
                 {selectedProperty.city}, {selectedProperty.state} {selectedProperty.zip_code}
               </p>
-              <p style={{
-                color: '#6b7280',
-                margin: '0 0 0.25rem',
-                fontSize: '0.8rem',
-              }}>
+              <p style={{ color: '#6b7280', margin: '0 0 0.25rem', fontSize: '0.8rem' }}>
                 {selectedProperty.present_use}
               </p>
-              <p style={{
-                color: '#6b7280',
-                margin: '0 0 0.25rem',
-                fontSize: '0.8rem',
-              }}>
+              <p style={{ color: '#6b7280', margin: '0 0 0.25rem', fontSize: '0.8rem' }}>
                 Lot: {selectedProperty.square_feet_lot?.toLocaleString()} sq ft
-                {selectedProperty.acreage
-                  ? ` (${selectedProperty.acreage.toFixed(2)} acres)`
-                  : ''}
+                {selectedProperty.acreage ? ` (${selectedProperty.acreage.toFixed(2)} acres)` : ''}
               </p>
-              <p style={{
-                color: '#374151',
-                margin: '0 0 0.75rem',
-                fontSize: '0.8rem',
-                fontWeight: '500',
-              }}>
+              <p style={{ color: '#374151', margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '500' }}>
                 Assessed: {formatCurrency(selectedProperty.appraised_total_value)}
               </p>
               <button

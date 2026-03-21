@@ -147,26 +147,26 @@ export default function PropertyDetailPage() {
 
       setProperty(propertyData)
 
-      const { data: reviewData } = await supabase
+const { data: reviewData } = await supabase
         .from('reviews')
         .select(`
           id, user_id, overall_rating, ease_of_interaction, payment_timeliness,
           paid_on_time, no_call_no_show, change_order_count,
           job_size, job_value, job_description, job_completed_at,
           title, body, created_at,
-          users ( display_name, company_name ),
+          users!reviews_user_id_fkey ( display_name, company_name ),
           review_payment_tactics ( payment_tactics ( label ) ),
           review_red_flags ( red_flags ( label ) )
         `)
         .eq('property_id', id)
-        .eq('is_published', true)
         .order('created_at', { ascending: false })
 
-      if (reviewData) {
-        setReviews(reviewData as unknown as Review[])
-        const userReview = reviewData.find((r) => r.user_id === user.id)
-        setUserReviewExists(!!userReview)
-      }
+
+          if (reviewData) {
+            setReviews(reviewData as unknown as Review[])
+            const userReview = reviewData.find((r) => r.user_id === user.id)
+            setUserReviewExists(!!userReview)
+          }
 
       setLoading(false)
     }

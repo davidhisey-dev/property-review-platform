@@ -262,6 +262,8 @@ export default function ReviewPage() {
         title:              form.title || null,
         body:               form.body || null,
         is_published:       true,
+        is_removed:         false,
+        status:             'published',
       })
       .select('id')
       .single()
