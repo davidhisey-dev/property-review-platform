@@ -74,6 +74,32 @@ export default function PropertyMap({
     }
   }, [])
 
+// Fetch review count for selected property if not already loaded
+  useEffect(() => {
+    if (!selectedProperty) return
+    if (reviewCounts[selectedProperty.parcel_number] !== undefined) return
+
+    const fetchCount = async () => {
+      try {
+        const res = await fetch('/api/reviews/counts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parcel_numbers: [selectedProperty.parcel_number],
+          }),
+        })
+        const data = await res.json()
+        if (data.counts) {
+          setReviewCounts((prev) => ({ ...prev, ...data.counts }))
+        }
+      } catch {
+        // Supplemental — don't fail
+      }
+    }
+
+    fetchCount()
+  }, [selectedProperty])
+
   const handleSelectProperty = useCallback(async () => {
     if (!selectedProperty) return
     try {
@@ -442,7 +468,20 @@ export default function PropertyMap({
                 }}>
                   {selectedProperty.address_full}
                 </p>
-                {reviewCounts[selectedProperty.parcel_number] > 0 ? (
+{reviewCounts[selectedProperty.parcel_number] === undefined ? (
+                  <span style={{
+                    marginLeft: '0.5rem',
+                    backgroundColor: '#f3f4f6',
+                    color: '#9ca3af',
+                    padding: '0.1rem 0.5rem',
+                    borderRadius: '9999px',
+                    fontSize: '0.75rem',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
+                  }}>
+                    ...
+                  </span>
+                ) : reviewCounts[selectedProperty.parcel_number] > 0 ? (
                   <span style={{
                     marginLeft: '0.5rem',
                     backgroundColor: '#dbeafe',
