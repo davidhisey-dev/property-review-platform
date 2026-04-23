@@ -65,7 +65,7 @@ export default function NavBar({ isAdmin = false, displayName = '' }: Props) {
         }}
         onClick={() => router.push('/dashboard')}
       >
-        PropReview
+        Adam's List
       </span>
 
       {/* Center — navigation links */}

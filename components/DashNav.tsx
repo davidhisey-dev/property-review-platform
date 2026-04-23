@@ -63,7 +63,7 @@ export default function DashNav({ isAdmin = false, displayName = '' }: Props) {
         }}
         onClick={() => router.push('/dashboard')}
       >
-        PropReview
+        Adam's List
       </span>
 
       {/* Nav items */}

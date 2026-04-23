@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import { useProfile } from '@/lib/useProfile'
@@ -116,12 +116,15 @@ export default function PropertyDetailPage() {
 
   type UserHistoryItem = { id: string; status: string; updated_at: string }
 
+  const fetchedRef = useRef<string | null>(null)
   const [property, setProperty] = useState<Property | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
   const [userHistory, setUserHistory] = useState<UserHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (fetchedRef.current === id) return
+    fetchedRef.current = id
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
@@ -193,7 +196,8 @@ export default function PropertyDetailPage() {
     }
 
     load()
-  }, [id, router, supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
   if (loading) {
     return (

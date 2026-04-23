@@ -62,6 +62,13 @@ type RecentlyViewedItem = {
   lastViewedAt: string
 }
 
+type MismatchResult = {
+  kcAddress: string
+  propertyId: string | null
+  lat: number
+  lng: number
+}
+
 // FIX 5: Added 'third' (~33vh visible) as a snap point triggered by tab taps
 type PanelState = 'collapsed' | 'third' | 'half' | 'full'
 
@@ -169,6 +176,7 @@ export default function DashboardPage() {
     moved: boolean
   } | null>(null)
 
+  const fetchedRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [displayName, setDisplayName] = useState('')
@@ -190,6 +198,8 @@ export default function DashboardPage() {
 
   // Auth guard + fetch My Reviews on load
   useEffect(() => {
+    if (fetchedRef.current) return
+    fetchedRef.current = true
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/'); return }
@@ -269,7 +279,8 @@ export default function DashboardPage() {
       setLoading(false)
     }
     init()
-  }, [router, supabase])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ─── Panel drag ────────────────────────────────────────────────────────────
 
@@ -328,11 +339,13 @@ export default function DashboardPage() {
   const handlePinClick = useCallback((pin: ReviewPin) => {
     setSelectedPin(pin)
     setPanelState('collapsed')
-    mapRef.current?.flyTo({
-      center: [pin.longitude, pin.latitude],
-      zoom: 15,
-      duration: 600,
-    })
+    setTimeout(() => {
+      mapRef.current?.flyTo({
+        center: [pin.longitude, pin.latitude],
+        zoom: 16,
+        duration: 800,
+      })
+    }, 300)
   }, [])
 
   // ─── Derived ───────────────────────────────────────────────────────────────
@@ -493,7 +506,7 @@ export default function DashboardPage() {
                     </>
                   ) : (
                     <p className="text-xs text-gray-400">
-                      No King County parcel found. Only King County, WA properties are supported.
+                      Parcel data not available for this address. Try a nearby address or search by parcel number.
                     </p>
                   )}
                 </div>
@@ -739,8 +752,10 @@ function ExploreTab({
   const [suggestions, setSuggestions] = useState<GeocodeSuggestion[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
+  const [mismatch, setMismatch] = useState<MismatchResult | null>(null)
   const [inputFocused, setInputFocused] = useState(false)
   const [recentlyViewed, setRecentlyViewed] = useState<RecentlyViewedItem[]>([])
+  const selectedRef = useRef(false)
 
   useEffect(() => {
     const loadRecent = async () => {
@@ -785,97 +800,111 @@ function ExploreTab({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const ADDRESS_READY = /^\d+\s+\S{2,}/
+  const runGeocoding = useCallback(async (q: string) => {
+    try {
+      const url = new URL('https://api.mapbox.com/geocoding/v5/mapbox.places/' + encodeURIComponent(q) + '.json')
+      url.searchParams.set('access_token', token)
+      url.searchParams.set('types', 'address')
+      url.searchParams.set('country', 'US')
+      url.searchParams.set('bbox', '-122.5434,47.1842,-121.3046,47.7776')
+      url.searchParams.set('proximity', '-122.0651,47.4502')
+      url.searchParams.set('autocomplete', 'true')
+      url.searchParams.set('fuzzy_match', 'false')
+      url.searchParams.set('limit', '10')
+      const res = await fetch(url.toString())
+      const data = await res.json()
+      if (data.features) {
+        const houseNum = q.match(/^\d+/)?.[0]
+        const filtered = (data.features as GeocodeSuggestion[]).filter(f => {
+          // Must start with the typed house number (eliminates partial/positional matches)
+          if (houseNum && !f.place_name.startsWith(houseNum)) return false
+          // Must have a street component (first segment must contain a space after the number)
+          const streetPart = f.place_name.split(',')[0]
+          if (!streetPart.includes(' ')) return false
+          return true
+        })
+        setSuggestions(filtered)
+      }
+    } catch {
+      // Suggestions are supplemental — don't show an error
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Debounced Mapbox address suggestions
+  const handleSearchNow = () => {
+    if (selectedRef.current) return
+    if (query.trim().length < 2) return
+    runGeocoding(query)
+  }
+
+  // Debounced geocoding — gated after selection until user types a new address
+  // Stage 1: pure digits (no space yet) → suppress; Stage 2: digits+space+street → fire
   useEffect(() => {
-    if (!ADDRESS_READY.test(query.trim())) {
+    if (selectedRef.current) return
+    const trimmed = query.trim()
+    if (!/^\d+\s+\S/.test(trimmed)) {
       setSuggestions([])
       return
     }
-    const timer = setTimeout(async () => {
-      try {
-        const url = new URL('https://api.mapbox.com/geocoding/v5/mapbox.places/' + encodeURIComponent(query) + '.json')
-        url.searchParams.set('access_token', token)
-        url.searchParams.set('types', 'address')
-        url.searchParams.set('country', 'US')
-        url.searchParams.set('bbox', '-122.5434,47.1842,-121.3046,47.7776')
-        url.searchParams.set('proximity', '-122.0651,47.4502')
-        url.searchParams.set('autocomplete', 'true')
-        url.searchParams.set('fuzzy_match', 'false')
-        url.searchParams.set('limit', '10')
-        console.log('[Geocoding URL]', url.toString())
-        const res = await fetch(url.toString())
-        const data = await res.json()
-        if (data.features) setSuggestions(data.features)
-      } catch {
-        // Suggestions are supplemental — don't show an error
-      }
-    }, 300)
+    const timer = setTimeout(() => runGeocoding(query), 300)
     return () => clearTimeout(timer)
-  }, [query])
+  }, [query, runGeocoding])
 
   const handleSelect = async (suggestion: GeocodeSuggestion) => {
-    const lng = suggestion.center[0]
-    const lat = suggestion.center[1]
+    const mapboxLng = suggestion.center[0]
+    const mapboxLat = suggestion.center[1]
     const shortAddress = suggestion.place_name.split(',')[0]
-
-    // FIX 4: Capture the user's typed query BEFORE overwriting it.
-    // Mapbox place_name spells out directions ("Southeast 32nd Street") while
-    // King County stores abbreviated forms ("SE 32ND ST"). Using the user's
-    // original input preserves the KC-compatible abbreviation format.
+    // Preserve user's typed query — KC uses abbreviated forms (SE 32ND ST) while
+    // Mapbox spells them out (Southeast 32nd Street)
     const originalQuery = query
 
+    selectedRef.current = true
     setSuggestions([])
     setQuery(shortAddress)
     setError('')
+    setMismatch(null)
     setSearching(true)
 
-    // FIX 4 diagnostic: log what we're sending to the KC API
-    console.log('[Explore KC lookup] user query (sent to KC):', originalQuery)
-    console.log('[Explore KC lookup] Mapbox place_name:', suggestion.place_name)
-    console.log('[Explore KC lookup] geocoded coords:', lat, lng)
-
-    // Fly map to geocoded location immediately
-    mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 800 })
-
-    // Show marker optimistically while KC lookup runs
-    onResult({ address: shortAddress, latitude: lat, longitude: lng, propertyId: null, loading: true })
+    // Do NOT fly or place a marker until KC confirms a real parcel
 
     try {
-      // FIX 4: Use originalQuery (user's typed text) not suggestion.place_name
       const searchRes = await fetch(
         `/api/property/search?address=${encodeURIComponent(originalQuery)}`
       )
-
-      // FIX 4 diagnostic: log the full KC response
       const searchData = searchRes.ok ? await searchRes.json() : null
-      console.log('[Explore KC response] status:', searchRes.status, '| data:', searchData)
+      const property = searchData?.property ?? searchData?.properties?.[0]
 
-      if (!searchRes.ok || !searchData) {
-        onResult({ address: shortAddress, latitude: lat, longitude: lng, propertyId: null, loading: false })
+      // Case 1 — no parcel found
+      if (!searchRes.ok || !searchData || !property) {
+        setError('No parcel found for this address. Try searching for a nearby address or a different street number.')
         setSearching(false)
         return
       }
 
-      const property = searchData.property ?? searchData.properties?.[0]
+      const kcLat = property.latitude ? Number(property.latitude) : mapboxLat
+      const kcLng = property.longitude ? Number(property.longitude) : mapboxLng
+      const kcAddress = property.address_full || shortAddress
 
-      if (!property) {
-        onResult({ address: shortAddress, latitude: lat, longitude: lng, propertyId: null, loading: false })
+      // House number mismatch check — >20% difference flags a wrong parcel
+      const searchedNum = parseInt(shortAddress.match(/^\d+/)?.[0] ?? '0', 10)
+      const kcNum = parseInt(kcAddress.match(/^\d+/)?.[0] ?? '0', 10)
+      const isMismatch = searchedNum > 0 && kcNum > 0 &&
+        Math.abs(searchedNum - kcNum) / Math.max(searchedNum, kcNum) > 0.2
+
+      // Case 2 — KC returned a parcel but at a different address
+      if (isMismatch) {
+        const cacheRes = await fetch('/api/property/cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(property),
+        })
+        const cacheData = cacheRes.ok ? await cacheRes.json() : {}
+        setMismatch({ kcAddress, propertyId: cacheData.id ?? null, lat: kcLat, lng: kcLng })
         setSearching(false)
         return
       }
 
-      // Use KC coordinates if available — they're more parcel-precise
-      const finalLat = property.latitude ? Number(property.latitude) : lat
-      const finalLng = property.longitude ? Number(property.longitude) : lng
-      const finalAddress = property.address_full || shortAddress
-
-      if (property.latitude && property.longitude) {
-        mapRef.current?.flyTo({ center: [finalLng, finalLat], zoom: 17, duration: 400 })
-      }
-
-      // Cache property in Supabase, get its UUID
+      // Case 3 — KC confirmed a real parcel at or near the searched address
       const cacheRes = await fetch('/api/property/cache', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -883,7 +912,6 @@ function ExploreTab({
       })
       const cacheData = cacheRes.ok ? await cacheRes.json() : {}
 
-      // Fetch review count from property_profiles
       let reviewCount: number | null = null
       if (cacheData.id) {
         const { data: pp } = await supabase
@@ -894,17 +922,20 @@ function ExploreTab({
         reviewCount = pp?.review_count ?? 0
       }
 
+      // Place marker and collapse panel first, then fly after collapse animation (300ms)
       onResult({
-        address: finalAddress,
-        latitude: finalLat,
-        longitude: finalLng,
+        address: kcAddress,
+        latitude: kcLat,
+        longitude: kcLng,
         propertyId: cacheData.id ?? null,
         loading: false,
         reviewCount,
       })
+      setTimeout(() => {
+        mapRef.current?.flyTo({ center: [kcLng, kcLat], zoom: 17, duration: 800 })
+      }, 300)
     } catch (err) {
       console.error('[Explore KC error]', err)
-      onResult({ address: shortAddress, latitude: lat, longitude: lng, propertyId: null, loading: false })
       setError('Search failed. Please try again.')
     }
 
@@ -920,45 +951,120 @@ function ExploreTab({
           type="text"
           value={query}
           onChange={e => {
+            selectedRef.current = false
             setQuery(e.target.value)
             if (!e.target.value.trim()) onResult(null)
           }}
+          onKeyDown={e => { if (e.key === 'Enter') handleSearchNow() }}
           onFocus={() => setInputFocused(true)}
           onBlur={() => setInputFocused(false)}
           placeholder="Search an address..."
-          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-8"
+          className="w-full pl-3 pr-20 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
-        {searching && (
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
-            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
+        <div className="absolute right-0 inset-y-0 flex items-center">
+          {/* X clear button */}
+          {query.length > 0 && (
+            <button
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => {
+                selectedRef.current = false
+                setQuery('')
+                setSuggestions([])
+                onResult(null)
+              }}
+              style={{ width: 36, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', flexShrink: 0 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+            </button>
+          )}
+          {/* Search / spinner button */}
+          <button
+            onMouseDown={e => e.preventDefault()}
+            onClick={handleSearchNow}
+            disabled={searching}
+            style={{ width: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', flexShrink: 0 }}
+          >
+            {searching
+              ? <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              : <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.75"/><path d="M10.5 10.5l3 3" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/></svg>
+            }
+          </button>
+        </div>
       </div>
 
-      {/* Helper text — visible when focused and input doesn't yet match the pattern */}
-      {inputFocused && !ADDRESS_READY.test(query.trim()) && suggestions.length === 0 && (
-        <p className="text-xs text-gray-400 mb-3 -mt-1 px-1">
-          Enter a house number and street name to search
-        </p>
+      {/* Helper text */}
+      {inputFocused && suggestions.length === 0 && (
+        /^\d+\s*$/.test(query.trim()) && query.trim().length > 0
+          ? <p className="text-xs text-gray-400 mb-3 -mt-1 px-1">Add a street name to search</p>
+          : !/^\d+\s+\S/.test(query.trim())
+            ? <p className="text-xs text-gray-400 mb-3 -mt-1 px-1">Enter a house number and street name to search</p>
+            : null
       )}
 
       {/* Suggestions list */}
       {suggestions.length > 0 && (
         <div className="border border-gray-200 rounded-lg overflow-hidden mb-4 shadow-sm">
-          {suggestions.map((s, i) => (
-            <button
-              key={i}
-              onClick={() => handleSelect(s)}
-              className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-700 border-b last:border-0 border-gray-100 transition-colors"
-            >
-              {s.place_name}
-            </button>
-          ))}
+          {suggestions.map((s, i) => {
+            const parts = s.place_name.split(', ')
+            // Primary: street address + city (e.g. "41235 SE 123rd Street, North Bend")
+            const primary = parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0]
+            // Secondary: state + zip abbreviated (e.g. "WA 98045"), never show "United States"
+            const stateZipRaw = parts.find(p => /[A-Z][a-z]+ \d{5}/.test(p)) ?? ''
+            const secondary = stateZipRaw.replace(
+              /^([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)\s(\d{5})$/,
+              (_, state: string, zip: string) => {
+                const abbrev: Record<string, string> = {
+                  Washington: 'WA', Oregon: 'OR', Idaho: 'ID', Montana: 'MT', California: 'CA',
+                }
+                return `${abbrev[state] ?? state} ${zip}`
+              }
+            )
+            return (
+              <button
+                key={i}
+                onClick={() => handleSelect(s)}
+                className="w-full text-left px-4 border-b last:border-0 border-gray-100 hover:bg-blue-50 transition-colors"
+                style={{ minHeight: 48, paddingTop: '0.75rem', paddingBottom: '0.75rem' }}
+              >
+                <div className="text-sm font-medium text-gray-800">{primary}</div>
+                {secondary && <div className="text-xs text-gray-400 mt-0.5">{secondary}</div>}
+              </button>
+            )
+          })}
         </div>
       )}
 
       {error && (
         <p className="text-xs text-red-500 mb-3 mt-1">{error}</p>
+      )}
+
+      {/* Mismatch confirmation — KC returned a nearby but different parcel */}
+      {mismatch && !searching && (
+        <div className="mb-4 mt-1 px-3 py-3 bg-amber-50 border border-amber-100 rounded-lg">
+          <p className="text-sm text-gray-800 leading-snug mb-3">
+            Exact address not found. Nearest parcel is{' '}
+            <span className="font-medium">{mismatch.kcAddress}</span> — is this the property you are looking for?
+          </p>
+          <div className="flex gap-2">
+            {mismatch.propertyId && (
+              <button
+                onClick={() => router.push(`/property/${mismatch.propertyId!}`)}
+                className="flex-1 py-2 px-3 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors"
+              >
+                Yes, view this property
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setMismatch(null)
+                selectedRef.current = false
+              }}
+              className={`${mismatch.propertyId ? 'flex-1' : 'w-full'} py-2 px-3 bg-white text-gray-600 text-xs font-medium rounded-md border border-gray-200 hover:bg-gray-50 transition-colors`}
+            >
+              No, search again
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Inline result confirmation (mirrors the map popup) */}
@@ -983,7 +1089,7 @@ function ExploreTab({
             </>
           ) : (
             <p className="mt-1 text-xs text-gray-400">
-              No King County parcel found. Only King County, WA properties are supported.
+              Parcel data not available for this address. Try a nearby address or search by parcel number.
             </p>
           )}
         </div>
