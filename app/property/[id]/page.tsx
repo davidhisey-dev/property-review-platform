@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useParams } from 'next/navigation'
 import { useProfile } from '@/lib/useProfile'
-import NavBar from '@/components/NavBar'
+import DashNav, { NAV_H } from '@/components/DashNav'
 
 type Property = {
   id: string
@@ -46,6 +46,7 @@ type Review = {
   title: string | null
   body: string | null
   created_at: string
+  updated_at: string
   users: {
     display_name: string
     company_name: string
@@ -113,10 +114,12 @@ export default function PropertyDetailPage() {
   const id = params.id as string
   const supabase = createClient()
 
+  type UserHistoryItem = { id: string; status: string; updated_at: string }
+
   const [property, setProperty] = useState<Property | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
+  const [userHistory, setUserHistory] = useState<UserHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [userReviewExists, setUserReviewExists] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -145,28 +148,46 @@ export default function PropertyDetailPage() {
         return
       }
 
+      console.log('[Property page] id from URL:', id, '| parcel_number:', propertyData.parcel_number)
       setProperty(propertyData)
 
-const { data: reviewData } = await supabase
+      // DIAGNOSTIC — temporary await to surface errors
+      const { data: rvData, error: rvError } = await supabase
+        .from('recently_viewed')
+        .upsert(
+          { user_id: user.id, property_id: id, last_viewed_at: new Date().toISOString() },
+          { onConflict: 'user_id,property_id' }
+        )
+      console.log('[recently_viewed upsert] user_id:', user.id, 'property_id:', id, 'data:', rvData, 'error:', rvError)
+
+      const { data: reviewData, error: reviewError } = await supabase
         .from('reviews')
         .select(`
-          id, user_id, overall_rating, ease_of_interaction, payment_timeliness,
+          id, user_id, property_id, status, overall_rating, ease_of_interaction, payment_timeliness,
           paid_on_time, no_call_no_show, change_order_count,
           job_size, job_value, job_description, job_completed_at,
-          title, body, created_at,
+          title, body, created_at, updated_at,
           users!reviews_user_id_fkey ( display_name, company_name ),
           review_payment_tactics ( payment_tactics ( label ) ),
           review_red_flags ( red_flags ( label ) )
         `)
         .eq('property_id', id)
-        .order('created_at', { ascending: false })
+        .eq('status', 'submitted')
+        .order('updated_at', { ascending: false })
 
+      if (reviewData) {
+        setReviews(reviewData as unknown as Review[])
+      }
 
-          if (reviewData) {
-            setReviews(reviewData as unknown as Review[])
-            const userReview = reviewData.find((r) => r.user_id === user.id)
-            setUserReviewExists(!!userReview)
-          }
+      // Separate lightweight query for this contractor's own history
+      const { data: historyData } = await supabase
+        .from('reviews')
+        .select('id, status, updated_at')
+        .eq('property_id', id)
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+
+      if (historyData) setUserHistory(historyData)
 
       setLoading(false)
     }
@@ -176,8 +197,8 @@ const { data: reviewData } = await supabase
 
   if (loading) {
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', paddingTop: NAV_H }}>
+        <DashNav isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
         <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
           Loading property...
         </div>
@@ -188,8 +209,8 @@ const { data: reviewData } = await supabase
   if (!property) return null
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
-<NavBar isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingTop: NAV_H }}>
+      <DashNav isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
 
 
       <div style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem 1rem' }}>
@@ -295,6 +316,64 @@ const { data: reviewData } = await supabase
           </div>
         </div>
 
+        {/* Contractor History Banner */}
+        {(() => {
+          const submittedHistory = userHistory.filter(r => r.status === 'submitted')
+          const draft = userHistory.find(r => r.status === 'draft')
+          if (submittedHistory.length === 0 && !draft) return null
+          return (
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              padding: '1.25rem 1.5rem',
+              marginBottom: '1rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+              <p style={{
+                margin: '0 0 1rem',
+                fontSize: '0.75rem',
+                fontWeight: '700',
+                color: '#374151',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+              }}>
+                Your History
+              </p>
+              <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+                My Reviews for this property:{' '}
+                <span style={{ fontWeight: '500' }}>{submittedHistory.length}</span>
+              </p>
+              {submittedHistory.length > 0 && (
+                <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+                  Last Review:{' '}
+                  <span style={{ fontWeight: '500' }}>{formatDate(submittedHistory[0].updated_at)}</span>
+                </p>
+              )}
+              {draft && (
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#92400e', lineHeight: '1.6' }}>
+                  ⚠️ You have a draft in progress —{' '}
+                  <button
+                    onClick={() => router.push(`/property/${id}/review?draftId=${draft.id}`)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: '#d97706',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: '500',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Resume draft
+                  </button>
+                </p>
+              )}
+            </div>
+          )
+        })()}
+
         {/* Reviews Section Header */}
         <div style={{
           display: 'flex',
@@ -319,34 +398,22 @@ const { data: reviewData } = await supabase
             )}
           </h2>
 
-          {!userReviewExists && (
-            <button
-              onClick={() => router.push(`/property/${id}/review`)}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: '#2563eb',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                fontWeight: '500',
-                minHeight: '44px',
-              }}
-            >
-              + Leave a Review
-            </button>
-          )}
-
-          {userReviewExists && (
-            <span style={{
+          <button
+            onClick={() => router.push(`/property/${id}/review`)}
+            style={{
+              padding: '0.5rem 1rem',
+              backgroundColor: '#2563eb',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
               fontSize: '0.875rem',
-              color: '#16a34a',
               fontWeight: '500',
-            }}>
-              ✓ You reviewed this property
-            </span>
-          )}
+              minHeight: '44px',
+            }}
+          >
+            + Leave a Review
+          </button>
         </div>
 
         {/* No Reviews State */}
@@ -399,7 +466,7 @@ const { data: reviewData } = await supabase
               <div style={{ textAlign: 'right' }}>
                 <StarRating value={review.overall_rating} />
                 <p style={{ margin: '0.2rem 0 0', fontSize: '0.75rem', color: '#9ca3af' }}>
-                  {formatDate(review.created_at)}
+                  Submitted {formatDate(review.updated_at)}
                 </p>
               </div>
             </div>

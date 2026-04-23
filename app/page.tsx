@@ -21,9 +21,9 @@ export default function Home() {
 
       const { data: profile } = await supabase
         .from('users')
-        .select('is_active, is_admin')
+        .select('registration_status, is_admin')
         .eq('id', user.id)
-        .single()
+        .maybeSingle()
 
       if (!profile) {
         router.push('/register')
@@ -35,8 +35,13 @@ export default function Home() {
         return
       }
 
-      if (!profile.is_active) {
-        router.push('/pending')
+      if (profile.registration_status === 'pending') {
+        router.push('/register/pending')
+        return
+      }
+
+      if (profile.registration_status === 'rejected') {
+        router.push('/register/rejected')
         return
       }
 

@@ -3,31 +3,44 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import DashNav, { NAV_H } from '@/components/DashNav'
 
 type BusinessType = {
   id: number
   label: string
 }
 
-type Language = {
-  id: number
-  code: string
-  label: string
-}
+const US_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
+  'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
+  'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
+  'SD','TN','TX','UT','VT','VA','WA','WV','WI','WY',
+]
+
+const LANGUAGES = [
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'fr', label: 'French' },
+  { value: 'zh', label: 'Mandarin' },
+  { value: 'other', label: 'Other' },
+]
 
 export default function RegisterPage() {
   const router = useRouter()
   const supabase = createClient()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [businessTypes, setBusinessTypes] = useState<BusinessType[]>([])
-  const [languages, setLanguages] = useState<Language[]>([])
 
   const [form, setForm] = useState({
     display_name: '',
     company_name: '',
     business_type_id: '',
     license_number: '',
+    license_state: '',
+    license_classification: '',
     insurance_provider: '',
     insurance_policy: '',
     insurance_expiry: '',
@@ -35,24 +48,56 @@ export default function RegisterPage() {
   })
 
   useEffect(() => {
-    const fetchData = async () => {
-      const [{ data: btData }, { data: langData }] = await Promise.all([
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/'); return }
+
+      // Load existing profile (for reapply pre-fill)
+      const [{ data: profile }, { data: btData }] = await Promise.all([
+        supabase
+          .from('users')
+          .select('registration_status, display_name, company_name, business_type_id, license_number, license_state, license_classification, insurance_provider, insurance_policy, insurance_expiry, language_preference')
+          .eq('id', user.id)
+          .maybeSingle(),
         supabase
           .from('business_types')
           .select('id, label')
           .eq('is_active', true)
           .order('sort_order'),
-        supabase
-          .from('languages')
-          .select('id, code, label')
-          .eq('is_active', true)
-          .order('sort_order'),
       ])
+
       if (btData) setBusinessTypes(btData)
-      if (langData) setLanguages(langData)
+
+      if (profile) {
+        // Already approved → go to dashboard
+        if (profile.registration_status === 'approved') {
+          router.push('/dashboard')
+          return
+        }
+        // Already pending → go to pending page
+        if (profile.registration_status === 'pending') {
+          router.push('/register/pending')
+          return
+        }
+        // Rejected — pre-fill form so they can reapply
+        setForm({
+          display_name: profile.display_name ?? '',
+          company_name: profile.company_name ?? '',
+          business_type_id: profile.business_type_id ? String(profile.business_type_id) : '',
+          license_number: profile.license_number ?? '',
+          license_state: profile.license_state ?? '',
+          license_classification: profile.license_classification ?? '',
+          insurance_provider: profile.insurance_provider ?? '',
+          insurance_policy: profile.insurance_policy ?? '',
+          insurance_expiry: profile.insurance_expiry ?? '',
+          language_preference: profile.language_preference ?? '',
+        })
+      }
+
+      setLoading(false)
     }
-    fetchData()
-  }, [])
+    init()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -61,7 +106,7 @@ export default function RegisterPage() {
   }
 
   const handleSubmit = async () => {
-    setLoading(true)
+    setSubmitting(true)
     setError(null)
 
     if (
@@ -69,25 +114,24 @@ export default function RegisterPage() {
       !form.company_name ||
       !form.business_type_id ||
       !form.license_number ||
+      !form.license_state ||
       !form.insurance_provider ||
       !form.insurance_policy ||
-      !form.insurance_expiry ||
-      !form.language_preference
+      !form.insurance_expiry
     ) {
       setError('Please fill in all required fields.')
-      setLoading(false)
+      setSubmitting(false)
       return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
-
     if (!user) {
       setError('You must be signed in to register.')
-      setLoading(false)
+      setSubmitting(false)
       return
     }
 
-    const { error: insertError } = await supabase
+    const { error: upsertError } = await supabase
       .from('users')
       .upsert({
         id: user.id,
@@ -96,41 +140,50 @@ export default function RegisterPage() {
         company_name: form.company_name,
         business_type_id: parseInt(form.business_type_id),
         license_number: form.license_number,
+        license_state: form.license_state,
+        license_classification: form.license_classification || null,
         license_status: 'pending',
         insurance_provider: form.insurance_provider,
         insurance_policy: form.insurance_policy,
         insurance_expiry: form.insurance_expiry,
-        language_preference: form.language_preference,
+        language_preference: form.language_preference || null,
+        registration_status: 'pending',
         is_active: false,
         is_admin: false,
       })
 
-    if (insertError) {
+    if (upsertError) {
       setError('Something went wrong. Please try again.')
-      setLoading(false)
+      setSubmitting(false)
       return
     }
 
     await fetch('/api/email/pending', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: user.email,
-        name: form.display_name,
-      }),
+      body: JSON.stringify({ email: user.email, name: form.display_name }),
     })
 
-    router.push('/pending')
+    router.push('/register/pending')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center">
+        <p className="text-neutral-400 text-sm">Loading...</p>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 py-12 px-4">
-      <div className="max-w-xl mx-auto">
+    <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
+      <DashNav isAdmin={false} displayName="" />
+
+      <div className="max-w-xl mx-auto py-10 px-4">
         <div className="card">
-          <h1>Contractor Registration</h1>
-          <p className="text-neutral-500 mb-8">
-            Please complete your profile to apply for access to the platform.
-            All fields are required.
+          <h1 className="text-2xl font-bold text-neutral-900 mb-1">Contractor Registration</h1>
+          <p className="text-neutral-500 mb-8 text-sm">
+            Complete your profile to apply for platform access. All fields marked * are required.
           </p>
 
           {error && (
@@ -138,7 +191,7 @@ export default function RegisterPage() {
           )}
 
           <div className="form-group">
-            <label>Full Name</label>
+            <label>Full Name *</label>
             <input
               name="display_name"
               value={form.display_name}
@@ -148,7 +201,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>Company Name</label>
+            <label>Company Name *</label>
             <input
               name="company_name"
               value={form.company_name}
@@ -158,7 +211,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>Business Type</label>
+            <label>Business Type *</label>
             <select
               name="business_type_id"
               value={form.business_type_id}
@@ -166,25 +219,47 @@ export default function RegisterPage() {
             >
               <option value="">Select a business type</option>
               {businessTypes.map((bt) => (
-                <option key={bt.id} value={bt.id}>
-                  {bt.label}
-                </option>
+                <option key={bt.id} value={bt.id}>{bt.label}</option>
               ))}
             </select>
           </div>
 
           <div className="form-group">
-            <label>State License Number</label>
+            <label>License Number *</label>
             <input
               name="license_number"
               value={form.license_number}
               onChange={handleChange}
-              placeholder="Your WA state license number"
+              placeholder="Your contractor license number"
             />
           </div>
 
           <div className="form-group">
-            <label>Insurance Provider</label>
+            <label>License State *</label>
+            <select
+              name="license_state"
+              value={form.license_state}
+              onChange={handleChange}
+            >
+              <option value="">Select a state</option>
+              {US_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>License Classification</label>
+            <input
+              name="license_classification"
+              value={form.license_classification}
+              onChange={handleChange}
+              placeholder="e.g. General Building, Electrical, Plumbing"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Insurance Provider *</label>
             <input
               name="insurance_provider"
               value={form.insurance_provider}
@@ -194,7 +269,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>Insurance Policy Number</label>
+            <label>Insurance Policy Number *</label>
             <input
               name="insurance_policy"
               value={form.insurance_policy}
@@ -204,7 +279,7 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>Insurance Expiry Date</label>
+            <label>Insurance Expiry Date *</label>
             <input
               name="insurance_expiry"
               type="date"
@@ -214,27 +289,25 @@ export default function RegisterPage() {
           </div>
 
           <div className="form-group">
-            <label>Preferred Language</label>
+            <label>Language Preference</label>
             <select
               name="language_preference"
               value={form.language_preference}
               onChange={handleChange}
             >
-              <option value="">Select a language</option>
-              {languages.map((lang) => (
-                <option key={lang.id} value={lang.code}>
-                  {lang.label}
-                </option>
+              <option value="">Select a language (optional)</option>
+              {LANGUAGES.map((l) => (
+                <option key={l.value} value={l.value}>{l.label}</option>
               ))}
             </select>
           </div>
 
           <button
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={submitting}
             className="btn-primary w-full mt-4"
           >
-            {loading ? 'Submitting...' : 'Submit Application'}
+            {submitting ? 'Submitting...' : 'Submit Application'}
           </button>
         </div>
       </div>
