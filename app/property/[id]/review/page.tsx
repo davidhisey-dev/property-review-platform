@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 import { useProfile } from '@/lib/useProfile'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -777,7 +777,7 @@ export default function ReviewPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-        <DashNav isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
         <div className="flex items-center justify-center pt-24 text-gray-400 text-sm">Loading…</div>
       </div>
     )
@@ -788,7 +788,7 @@ export default function ReviewPage() {
   if (submitted) {
     return (
       <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-        <DashNav isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="bg-white rounded-2xl border shadow-sm max-w-sm w-full p-8 text-center">
             <div className="text-5xl mb-4">✓</div>
@@ -826,7 +826,7 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+      <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
 
       <div className="max-w-2xl mx-auto px-4 py-5 pb-32" onClick={() => setErrorBarDismissed(true)}>
 

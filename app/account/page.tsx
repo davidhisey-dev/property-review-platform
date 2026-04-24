@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 import { useProfile } from '@/lib/useProfile'
 
 type BusinessType = {
@@ -287,7 +287,7 @@ export default function AccountPage() {
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingTop: NAV_H }}>
-        <DashNav isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+        <AppHeader isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
         <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
           Loading...
         </div>
@@ -301,7 +301,7 @@ export default function AccountPage() {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingTop: NAV_H }}>
-      <DashNav isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+      <AppHeader isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
 
       <div style={{ maxWidth: '700px', margin: '0 auto', padding: '1.5rem 1rem' }}>
 

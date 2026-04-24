@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 
 export default function RegisterRejectedPage() {
   const router = useRouter()
@@ -49,7 +49,7 @@ export default function RegisterRejectedPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={false} displayName={displayName} hideNav />
+      <AppHeader isAdmin={false} displayName={displayName} hideNav />
 
       <div className="max-w-xl mx-auto py-10 px-4">
         <div className="card mb-6">

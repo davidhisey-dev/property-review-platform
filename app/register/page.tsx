@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 
 type BusinessType = {
   id: number
@@ -174,7 +174,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={false} displayName="" hideNav />
+      <AppHeader isAdmin={false} displayName="" hideNav />
 
       <div className="max-w-xl mx-auto py-10 px-4">
         <div className="card">

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { useProfile } from '@/lib/useProfile'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 
 type Contractor = {
   id: string
@@ -230,7 +230,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
+      <AppHeader isAdmin={navProfile?.is_admin || false} displayName={navProfile?.display_name || ''} />
 
       <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '2rem' }}>
 

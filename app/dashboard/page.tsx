@@ -5,7 +5,7 @@ import Map, { Marker, Popup, NavigationControl, GeolocateControl } from 'react-m
 import type { MapRef } from 'react-map-gl/mapbox'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
-import DashNav, { NAV_H } from '@/components/DashNav'
+import AppHeader, { NAV_H } from '@/components/AppHeader'
 
 // ─── Pin color constants ──────────────────────────────────────────────────────
 const DRAFT_PIN_COLOR  = '#F59E0B'
@@ -21,7 +21,6 @@ const DEFAULT_VIEW = { longitude: -122.3321, latitude: 47.6062, zoom: 10 }
 const COLLAPSED_H    = 64   // px visible when panel is collapsed
 const DRAG_H         = 28   // drag handle height (py-3 = 24 + h-1 bar = 4)
 const PANEL_HEADER_H = 64   // drag handle (28) + My Reviews label row (36)
-const SEARCH_BAR_H   = 60   // fixed search bar below DashNav
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +75,7 @@ type AggregatePin = {
 
 // Used only to compute the maximum-open clamp during dragging
 function maxOpenOffset(wh: number): number {
-  return Math.max(NAV_H + SEARCH_BAR_H + 4, Math.floor(wh * 0.08))
+  return Math.max(NAV_H + 4, Math.floor(wh * 0.08))
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -575,95 +574,32 @@ export default function DashboardPage() {
   return (
     <div className="fixed inset-0 bg-gray-200">
 
-      {/* ── DashNav (z-index: 9999 in DashNav component) ── */}
-      <DashNav isAdmin={isAdmin} displayName={displayName} />
-
-      {/* ── Search bar — fixed below DashNav ── */}
-      <div style={{
-        position: 'fixed',
-        top: NAV_H,
-        left: 0,
-        right: 0,
-        height: SEARCH_BAR_H,
-        zIndex: 100,
-        backgroundColor: 'white',
-        borderBottom: '1px solid rgba(0,0,0,0.07)',
-        boxSizing: 'border-box',
-        padding: '8px 12px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: 400 }}>
-          <input
-            type="text"
-            value={query}
-            onChange={e => {
-              selectedRef.current = false
-              setQuery(e.target.value)
-              setSearchError('')
-              setMismatch(null)
-              if (!e.target.value.trim()) setExploreResult(null)
-            }}
-            onKeyDown={e => { if (e.key === 'Enter') handleSearchNow() }}
-            onFocus={() => setInputFocused(true)}
-            onBlur={() => setInputFocused(false)}
-            placeholder="Search an address..."
-            style={{
-              width: '100%',
-              paddingLeft: 12,
-              paddingRight: 84,
-              paddingTop: 10,
-              paddingBottom: 10,
-              fontSize: '0.875rem',
-              border: '1px solid #e5e7eb',
-              borderRadius: 8,
-              outline: 'none',
-              boxSizing: 'border-box',
-              minHeight: 44,
-              backgroundColor: '#f9fafb',
-            }}
-          />
-          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
-            {/* X clear button */}
-            {query.length > 0 && (
-              <button
-                onMouseDown={e => e.preventDefault()}
-                onClick={() => {
-                  selectedRef.current = false
-                  setQuery('')
-                  setSuggestions([])
-                  setSearchError('')
-                  setMismatch(null)
-                  setExploreResult(null)
-                }}
-                style={{ width: 36, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-              </button>
-            )}
-            {/* Magnifying glass / spinner */}
-            <button
-              onMouseDown={e => e.preventDefault()}
-              onClick={handleSearchNow}
-              disabled={searching}
-              style={{ width: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer' }}
-            >
-              {searching
-                ? <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                : (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.75"/>
-                    <path d="M10.5 10.5l3 3" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round"/>
-                  </svg>
-                )
-              }
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* ── AppHeader (search embedded in header) ── */}
+      <AppHeader
+        isAdmin={isAdmin}
+        displayName={displayName}
+        showSearch
+        query={query}
+        searching={searching}
+        onQueryChange={value => {
+          selectedRef.current = false
+          setQuery(value)
+          setSearchError('')
+          setMismatch(null)
+          if (!value.trim()) setExploreResult(null)
+        }}
+        onClear={() => {
+          selectedRef.current = false
+          setQuery('')
+          setSuggestions([])
+          setSearchError('')
+          setMismatch(null)
+          setExploreResult(null)
+        }}
+        onSearchNow={handleSearchNow}
+        onSearchFocus={() => setInputFocused(true)}
+        onSearchBlur={() => setInputFocused(false)}
+      />
 
       {/* ── Search feedback — suggestions / helper / error / mismatch ── */}
 
@@ -671,7 +607,7 @@ export default function DashboardPage() {
       {suggestions.length > 0 && (
         <div style={{
           position: 'fixed',
-          top: NAV_H + SEARCH_BAR_H + 4,
+          top: NAV_H + 4,
           left: 12,
           right: 12,
           zIndex: 200,
@@ -718,7 +654,7 @@ export default function DashboardPage() {
       {inputFocused && suggestions.length === 0 && !searchError && !mismatch && query.trim().length > 0 && query.trim().length < 3 && (
         <p style={{
           position: 'fixed',
-          top: NAV_H + SEARCH_BAR_H + 8,
+          top: NAV_H + 8,
           left: 16, right: 16,
           zIndex: 200,
           fontSize: '0.75rem',
@@ -733,7 +669,7 @@ export default function DashboardPage() {
       {searchError && !searching && (
         <div style={{
           position: 'fixed',
-          top: NAV_H + SEARCH_BAR_H + 8,
+          top: NAV_H + 8,
           left: 12, right: 12,
           zIndex: 200,
           backgroundColor: 'white',
@@ -749,7 +685,7 @@ export default function DashboardPage() {
       {mismatch && !searching && (
         <div style={{
           position: 'fixed',
-          top: NAV_H + SEARCH_BAR_H + 8,
+          top: NAV_H + 8,
           left: 12, right: 12,
           zIndex: 200,
           backgroundColor: '#fffbeb',
@@ -796,7 +732,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Map (z-index: 0; search bar at 100 floats above) ── */}
+      {/* ── Map ── */}
       <div className="absolute inset-0" style={{ zIndex: 0 }}>
         <Map
           ref={mapRef}
@@ -856,9 +792,9 @@ export default function DashboardPage() {
             let opacity = 1
             if (searchActive && exploreResult) {
               opacity = distKm(pin.latitude, pin.longitude, exploreResult.latitude, exploreResult.longitude) <= 1
-                ? 1 : 0.3
+                ? 1 : 0.6
             } else if (panelIsUp) {
-              opacity = 0.3
+              opacity = 0.6
             }
             return (
               <Marker
