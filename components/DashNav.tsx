@@ -8,9 +8,10 @@ export const NAV_H = 52
 type Props = {
   isAdmin?: boolean
   displayName?: string
+  hideNav?: boolean
 }
 
-export default function DashNav({ isAdmin = false, displayName = '' }: Props) {
+export default function DashNav({ isAdmin = false, displayName = '', hideNav = false }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -66,28 +67,30 @@ export default function DashNav({ isAdmin = false, displayName = '' }: Props) {
         Adam's List
       </span>
 
-      {/* Nav items */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-        {navItems.map(item => (
-          <button
-            key={item.path}
-            onClick={() => router.push(item.path)}
-            style={{
-              padding: '0.375rem 0.75rem',
-              borderRadius: '0.375rem',
-              border: 'none',
-              fontSize: '0.875rem',
-              fontWeight: '500',
-              cursor: 'pointer',
-              backgroundColor: pathname === item.path ? '#eff6ff' : 'transparent',
-              color: pathname === item.path ? '#1d4ed8' : '#4b5563',
-              minHeight: 36,
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
+      {/* Nav items — hidden for non-approved users */}
+      {!hideNav && (
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+          {navItems.map(item => (
+            <button
+              key={item.path}
+              onClick={() => router.push(item.path)}
+              style={{
+                padding: '0.375rem 0.75rem',
+                borderRadius: '0.375rem',
+                border: 'none',
+                fontSize: '0.875rem',
+                fontWeight: '500',
+                cursor: 'pointer',
+                backgroundColor: pathname === item.path ? '#eff6ff' : 'transparent',
+                color: pathname === item.path ? '#1d4ed8' : '#4b5563',
+                minHeight: 36,
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {/* Right: display name + sign out */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>

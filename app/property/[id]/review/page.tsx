@@ -33,7 +33,6 @@ type FormState = {
   flag_required_legal_action: boolean | null
   selected_tactics: number[]
   scope_clarity: number
-  scope_change_frequency: number
   change_order_willingness: number
   change_request_count: string
   flag_expected_unpaid_work: boolean | null
@@ -89,7 +88,6 @@ const EMPTY_FORM: FormState = {
   flag_required_legal_action: null,
   selected_tactics: [],
   scope_clarity: 0,
-  scope_change_frequency: 0,
   change_order_willingness: 0,
   change_request_count: '',
   flag_expected_unpaid_work: null,
@@ -496,7 +494,6 @@ export default function ReviewPage() {
       flag_required_legal_action: draft.flag_required_legal_action != null ? Boolean(draft.flag_required_legal_action) : null,
       selected_tactics: tactics?.map(t => t.tactic_id as number) ?? [],
       scope_clarity: (draft.scope_clarity as number) ?? 0,
-      scope_change_frequency: (draft.scope_change_frequency as number) ?? 0,
       change_order_willingness: (draft.change_order_willingness as number) ?? 0,
       change_request_count: draft.change_request_count != null ? String(draft.change_request_count) : '',
       flag_expected_unpaid_work: draft.flag_expected_unpaid_work != null ? Boolean(draft.flag_expected_unpaid_work) : null,
@@ -555,7 +552,6 @@ export default function ReviewPage() {
     flag_renegotiated_mid_project: form.flag_renegotiated_mid_project,
     flag_required_legal_action: form.flag_required_legal_action,
     scope_clarity: form.scope_clarity || null,
-    scope_change_frequency: form.scope_change_frequency || null,
     change_order_willingness: form.change_order_willingness || null,
     change_request_count: form.change_request_count ? parseInt(form.change_request_count) : null,
     flag_expected_unpaid_work: form.flag_expected_unpaid_work,
@@ -626,6 +622,10 @@ export default function ReviewPage() {
   }
 
   const handleSave = async () => {
+    if (!form.primary_contact_name.trim()) {
+      showToast('Primary contact name is required before saving.', 'error')
+      return
+    }
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); router.push('/'); return }
@@ -663,6 +663,7 @@ export default function ReviewPage() {
     // Run validation — if anything fails, mark attempt and bail
     const isNcns = form.no_call_no_show === true
     const hasErrors =
+      !form.primary_contact_name.trim() ||
       form.no_call_no_show === null ||
       (!isNcns && (
         !form.contractor_role ||
@@ -724,6 +725,7 @@ export default function ReviewPage() {
 
   // Live validation errors — only shown after first failed submit attempt
   const validationErrors = submitAttempted ? [
+    ...(!form.primary_contact_name.trim() ? ['Primary contact name is required.'] : []),
     ...(form.no_call_no_show === null ? ['Please answer the No Call / No Show question.'] : []),
     ...(!ncns && !form.contractor_role ? ['Please select your role.'] : []),
     ...(!ncns && !form.job_size ? ['Please select a job range.'] : []),
@@ -734,6 +736,7 @@ export default function ReviewPage() {
 
   // Per-field error flags — derived live so highlights clear as fields are filled
   const fe = submitAttempted ? {
+    primary_contact_name: !form.primary_contact_name.trim(),
     no_call_no_show: form.no_call_no_show === null,
     contractor_role: !ncns && !form.contractor_role,
     job_size: !ncns && !form.job_size,
@@ -741,8 +744,8 @@ export default function ReviewPage() {
     overall_rating: !ncns && form.overall_rating === 0,
     would_work_again: !ncns && !form.would_work_again,
   } : {
-    no_call_no_show: false, contractor_role: false, job_size: false,
-    completed_project: false, overall_rating: false, would_work_again: false,
+    primary_contact_name: false, no_call_no_show: false, contractor_role: false,
+    job_size: false, completed_project: false, overall_rating: false, would_work_again: false,
   }
 
   const showS3Sub =
@@ -752,7 +755,6 @@ export default function ReviewPage() {
     (form.final_payment_experience > 0 && form.final_payment_experience <= 3)
   const showS4Sub =
     (form.scope_clarity > 0 && form.scope_clarity <= 3) ||
-    (form.scope_change_frequency > 0 && form.scope_change_frequency <= 3) ||
     (form.change_order_willingness > 0 && form.change_order_willingness <= 3)
   const showS5Sub =
     form.clear_decision_maker === false ||
@@ -848,7 +850,7 @@ export default function ReviewPage() {
 
         {ncns && (
           <div className="bg-orange-50 border border-orange-200 text-orange-800 text-sm rounded-lg px-4 py-3 mb-4">
-            No Call / No Show recorded — you may submit now or add a note below.
+            No Call / No Show recorded — enter the contact name above and submit, or add additional notes below.
           </div>
         )}
 
@@ -860,13 +862,17 @@ export default function ReviewPage() {
         >
           <FieldGroup>
             <div>
-              <FieldLabel>Primary Contact Name</FieldLabel>
+              <FieldLabel required>Primary Contact Name</FieldLabel>
               <input
                 type="text"
                 value={form.primary_contact_name}
                 onChange={e => set('primary_contact_name', e.target.value)}
                 placeholder="Name of person you dealt with"
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`w-full px-3 py-2.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${fe.primary_contact_name ? '' : 'border-gray-200'}`}
+                style={fe.primary_contact_name ? {
+                  borderColor: 'rgba(231,91,82,1)',
+                  backgroundColor: 'rgba(231,91,82,0.08)',
+                } : {}}
               />
             </div>
 
@@ -884,7 +890,7 @@ export default function ReviewPage() {
             </div>
 
             <div>
-              <FieldLabel required>No Call / No Show</FieldLabel>
+              <FieldLabel required={!ncns}>No Call / No Show</FieldLabel>
               <p className="text-xs text-gray-500 mb-2">Select Yes if the client failed to show up or respond without notice.</p>
               <FieldErrorWrap error={fe.no_call_no_show}>
                 <YesNo value={form.no_call_no_show} onChange={v => set('no_call_no_show', v)} invert />
@@ -892,7 +898,7 @@ export default function ReviewPage() {
             </div>
 
             <div>
-              <FieldLabel required>Your Role</FieldLabel>
+              <FieldLabel required={!ncns}>Your Role</FieldLabel>
               <FieldErrorWrap error={fe.contractor_role}>
                 <ThreeWay
                   options={[
@@ -907,7 +913,7 @@ export default function ReviewPage() {
             </div>
 
             <div>
-              <FieldLabel required>Job Range</FieldLabel>
+              <FieldLabel required={!ncns}>Job Range</FieldLabel>
               <FieldErrorWrap error={fe.job_size}>
                 <div className="flex flex-wrap gap-2">
                   {JOB_SIZES.map(size => (
@@ -943,7 +949,7 @@ export default function ReviewPage() {
             </div>
 
             <div>
-              <FieldLabel required>Did you complete the project?</FieldLabel>
+              <FieldLabel required={!ncns}>Did you complete the project?</FieldLabel>
               <FieldErrorWrap error={fe.completed_project}>
                 <YesNo value={form.completed_project} onChange={v => set('completed_project', v)} />
               </FieldErrorWrap>
@@ -956,6 +962,8 @@ export default function ReviewPage() {
                   type="date"
                   value={form.job_completion_date}
                   onChange={e => set('job_completion_date', e.target.value)}
+                  min="2010-01-01"
+                  max={new Date().toISOString().split('T')[0]}
                   className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -983,14 +991,14 @@ export default function ReviewPage() {
         >
           <FieldGroup>
             <div>
-              <FieldLabel required>Overall Client Rating</FieldLabel>
+              <FieldLabel required={!ncns}>Overall Client Rating</FieldLabel>
               <FieldErrorWrap error={fe.overall_rating}>
                 <StarRating value={form.overall_rating} onChange={v => set('overall_rating', v)} />
               </FieldErrorWrap>
             </div>
 
             <div>
-              <FieldLabel required>Would you work with this client again?</FieldLabel>
+              <FieldLabel required={!ncns}>Would you work with this client again?</FieldLabel>
               <FieldErrorWrap error={fe.would_work_again}>
                 <ThreeWay
                   options={[
@@ -1076,11 +1084,6 @@ export default function ReviewPage() {
             <div>
               <FieldLabel>Clarity of Initial Scope</FieldLabel>
               <StarRating value={form.scope_clarity} onChange={v => set('scope_clarity', v)} />
-            </div>
-
-            <div>
-              <FieldLabel>Frequency of Scope Changes</FieldLabel>
-              <StarRating value={form.scope_change_frequency} onChange={v => set('scope_change_frequency', v)} />
             </div>
 
             <div>

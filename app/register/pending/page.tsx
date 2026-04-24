@@ -67,7 +67,7 @@ export default function RegisterPendingPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={false} displayName={profile?.display_name ?? ''} />
+      <DashNav isAdmin={false} displayName={profile?.display_name ?? ''} hideNav />
 
       <div className="max-w-xl mx-auto py-10 px-4">
 
@@ -76,9 +76,9 @@ export default function RegisterPendingPage() {
           <div className="text-4xl mb-4">📋</div>
           <h1 className="text-2xl font-bold text-neutral-900 mb-3">Application Submitted</h1>
           <p className="text-neutral-600 text-sm leading-relaxed mb-6">
-            Thank you for applying to the Property Review Platform. Your application is under
-            review. You will receive an email notification once a decision has been made. This
-            typically takes 1–2 business days.
+            Thank you for applying to Adam's List. Your application is under review. You will
+            receive an email notification once a decision has been made. This typically takes
+            1–2 business days.
           </p>
           <button
             onClick={handleSignOut}

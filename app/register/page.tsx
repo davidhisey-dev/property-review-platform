@@ -21,9 +21,6 @@ const US_STATES = [
 const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'zh', label: 'Mandarin' },
-  { value: 'other', label: 'Other' },
 ]
 
 export default function RegisterPage() {
@@ -63,7 +60,7 @@ export default function RegisterPage() {
           .from('business_types')
           .select('id, label')
           .eq('is_active', true)
-          .order('sort_order'),
+          .order('label', { ascending: true }),
       ])
 
       if (btData) setBusinessTypes(btData)
@@ -177,7 +174,7 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-neutral-50" style={{ paddingTop: NAV_H }}>
-      <DashNav isAdmin={false} displayName="" />
+      <DashNav isAdmin={false} displayName="" hideNav />
 
       <div className="max-w-xl mx-auto py-10 px-4">
         <div className="card">

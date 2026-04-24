@@ -76,7 +76,7 @@ export default function Home() {
       margin: '4rem auto',
       textAlign: 'center',
     }}>
-      <h1>Property Review Platform</h1>
+      <h1>Adam's List</h1>
       <p style={{ color: '#555', marginBottom: '2rem' }}>
         A closed platform for verified contractors.
       </p>
