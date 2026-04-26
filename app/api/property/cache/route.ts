@@ -21,6 +21,7 @@ type PropertyInput = {
   last_sale_buyer: string | null
   owner_name: string | null
   owner_mailing_address: string | null
+  is_unincorporated: boolean | null
   latitude: number | null
   longitude: number | null
 }
@@ -99,6 +100,7 @@ export async function POST(request: Request) {
           last_sale_date:              property.last_sale_date,
           last_sale_seller:            property.last_sale_seller,
           last_sale_buyer:             property.last_sale_buyer,
+          is_unincorporated:           property.is_unincorporated,
           latitude:                    property.latitude,
           longitude:                   property.longitude,
           kc_data_last_synced:         new Date().toISOString(),
@@ -141,6 +143,7 @@ export async function POST(request: Request) {
         last_sale_buyer:             property.last_sale_buyer,
         owner_name:                  property.owner_name,
         owner_mailing_address:       property.owner_mailing_address,
+        is_unincorporated:           property.is_unincorporated,
         latitude:                    property.latitude,
         longitude:                   property.longitude,
         kc_data_last_synced:         new Date().toISOString(),

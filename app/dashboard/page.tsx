@@ -90,6 +90,8 @@ function fmtDate(iso: string): string {
 
 function normalizeAddress(address: string): string {
   let s = address.toUpperCase().trim()
+  // Protect ordinal suffixes before running replacements
+  s = s.replace(/\b(\d+)(ST|ND|RD|TH)\b/gi, '$1__ORD__$2')
   const replacements: [RegExp, string][] = [
     // Compound directionals before simple ones; (?<!\d) prevents matching inside ordinals
     [/(?<!\d)\bNORTHEAST\b/g, 'NE'], [/(?<!\d)\bNORTHWEST\b/g, 'NW'],
@@ -108,8 +110,11 @@ function normalizeAddress(address: string): string {
   for (const [re, abbr] of replacements) {
     s = s.replace(re, abbr)
   }
+  // Restore ordinal suffixes
+  s = s.replace(/(\d+)__ORD__(ST|ND|RD|TH)\b/gi, '$1$2')
   return s.replace(/\s+/g, ' ').trim()
 }
+
 
 // ─── Distance helper (approximate, King County area) ─────────────────────────
 
