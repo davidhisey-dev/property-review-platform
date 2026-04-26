@@ -151,17 +151,14 @@ export default function PropertyDetailPage() {
         return
       }
 
-      console.log('[Property page] id from URL:', id, '| parcel_number:', propertyData.parcel_number)
       setProperty(propertyData)
 
-      // DIAGNOSTIC — temporary await to surface errors
-      const { data: rvData, error: rvError } = await supabase
+      await supabase
         .from('recently_viewed')
         .upsert(
           { user_id: user.id, property_id: id, last_viewed_at: new Date().toISOString() },
           { onConflict: 'user_id,property_id' }
         )
-      console.log('[recently_viewed upsert] user_id:', user.id, 'property_id:', id, 'data:', rvData, 'error:', rvError)
 
       const { data: reviewData, error: reviewError } = await supabase
         .from('reviews')

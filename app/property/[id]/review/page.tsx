@@ -583,7 +583,6 @@ export default function ReviewPage() {
   })
 
   const syncJunctionTables = async (rid: string) => {
-    console.log('[syncJunctionTables] rid:', rid)
     const [d1, d2, d3] = await Promise.all([
       supabase.from('review_payment_tactics').delete().eq('review_id', rid),
       supabase.from('review_red_flags').delete().eq('review_id', rid),
@@ -632,7 +631,6 @@ export default function ReviewPage() {
 
     const payload = buildReviewPayload('draft')
     let rid = reviewId
-    console.log('[handleSave] user:', user.id, 'propertyId:', propertyId, 'existingReviewId:', rid)
 
     if (rid) {
       const { error } = await supabase.from('reviews').update(payload).eq('id', rid)
@@ -685,7 +683,6 @@ export default function ReviewPage() {
 
     const payload = buildReviewPayload('submitted')
     let rid = reviewId
-    console.log('[handleSubmit] user:', user.id, 'propertyId:', propertyId, 'existingReviewId:', rid)
 
     if (rid) {
       const { error } = await supabase.from('reviews').update(payload).eq('id', rid)

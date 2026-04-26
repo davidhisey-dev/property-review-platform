@@ -260,8 +260,7 @@ export default function DashboardPage() {
       setIsAdmin(profile.is_admin ?? false)
       setDisplayName(profile.display_name ?? '')
 
-      console.log('[My Reviews query] user_id filter:', user?.id)
-      const { data, error: reviewsError } = await supabase
+      const { data } = await supabase
         .from('reviews')
         .select(`
           id,
@@ -279,7 +278,6 @@ export default function DashboardPage() {
         .in('status', ['draft', 'submitted'])
         .order('last_edited_at', { ascending: false, nullsFirst: false })
 
-      console.log('[My Reviews fetch] rows:', data?.length ?? 0, 'error:', reviewsError)
 
       if (data) {
         const seenIds = new Set<string>()
@@ -469,7 +467,6 @@ export default function DashboardPage() {
     setMismatch(null)
     setSearching(true)
 
-    console.log('[KC lookup] normalized address:', normalizedQuery)
 
     try {
       const searchRes = await fetch(

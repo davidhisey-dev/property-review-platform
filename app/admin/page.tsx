@@ -59,7 +59,7 @@ export default function AdminPage() {
 
   const fetchContractors = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('users')
       .select(`
         id, display_name, email, company_name,
@@ -73,7 +73,6 @@ export default function AdminPage() {
       `)
       .order('created_at', { ascending: false })
 
-    console.log('[Admin fetchContractors] rows:', data?.length ?? 0, 'error:', error)
     if (data) setContractors(data as Contractor[])
     setLoading(false)
   }, [supabase])
