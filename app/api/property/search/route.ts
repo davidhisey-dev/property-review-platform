@@ -37,6 +37,19 @@ function mapFeature(
     last_sale_buyer:             sale?.buyername || null,
     latitude:                    a.LAT || null,
     longitude:                   a.LON || null,
+    // Extended parcel fields
+    legal_desc:                  (a.LEGALDESC as string)?.trim() || null,
+    zoning:                      (a.KCA_ZONING as string) || null,
+    levy_code:                   (a.LEVYCODE as string) || null,
+    levy_jurisdiction:           (a.LEVY_JURIS as string) || null,
+    taxable_land_value:          a.TAX_LNDVAL || null,
+    taxable_improvement_value:   a.TAX_IMPR || null,
+    tax_val_reason:              (a.TAXVAL_RSN as string)?.trim() || null,
+    new_construction:            a.NEW_CONSTR === 'Y',
+    tax_account_number:          (a.ACCNT_NUM as string) || null,
+    plat_name:                   (a.PLAT_NAME as string)?.trim() || null,
+    plat_lot:                    (a.PLAT_LOT as string)?.trim() || null,
+    plat_block:                  (a.PLAT_BLOCK as string)?.trim() || null,
   }
 }
 
@@ -91,7 +104,7 @@ export async function GET(request: Request) {
       whereClause = `ADDR_FULL LIKE '%${cleanAddress}%'`
     }
 
-    const outFields = 'PIN,ADDR_FULL,CTYNAME,POSTALCTYNAME,ZIP5,LAT,LON,APPRLNDVAL,APPR_IMPR,KCA_ACRES,LOTSQFT,PROPTYPE,PREUSE_DESC,KCTP_TAXYR'
+    const outFields = 'PIN,ADDR_FULL,CTYNAME,POSTALCTYNAME,ZIP5,LAT,LON,APPRLNDVAL,APPR_IMPR,KCA_ACRES,LOTSQFT,PROPTYPE,PREUSE_DESC,KCTP_TAXYR,LEGALDESC,KCA_ZONING,LEVYCODE,LEVY_JURIS,TAX_LNDVAL,TAX_IMPR,TAXVAL_RSN,NEW_CONSTR,ACCNT_NUM,PLAT_NAME,PLAT_LOT,PLAT_BLOCK'
     const queryString = [
       `where=${encodeURIComponent(whereClause)}`,
       `outFields=${outFields}`,

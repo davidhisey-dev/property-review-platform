@@ -24,6 +24,18 @@ type PropertyInput = {
   is_unincorporated: boolean | null
   latitude: number | null
   longitude: number | null
+  legal_desc: string | null
+  zoning: string | null
+  levy_code: string | null
+  levy_jurisdiction: string | null
+  taxable_land_value: number | null
+  taxable_improvement_value: number | null
+  tax_val_reason: string | null
+  new_construction: boolean
+  tax_account_number: string | null
+  plat_name: string | null
+  plat_lot: string | null
+  plat_block: string | null
 }
 
 export async function POST(request: Request) {
@@ -103,6 +115,18 @@ export async function POST(request: Request) {
           is_unincorporated:           property.is_unincorporated,
           latitude:                    property.latitude,
           longitude:                   property.longitude,
+          legal_desc:                  property.legal_desc,
+          zoning:                      property.zoning,
+          levy_code:                   property.levy_code,
+          levy_jurisdiction:           property.levy_jurisdiction,
+          taxable_land_value:          property.taxable_land_value,
+          taxable_improvement_value:   property.taxable_improvement_value,
+          tax_val_reason:              property.tax_val_reason,
+          new_construction:            property.new_construction,
+          tax_account_number:          property.tax_account_number,
+          plat_name:                   property.plat_name,
+          plat_lot:                    property.plat_lot,
+          plat_block:                  property.plat_block,
           kc_data_last_synced:         new Date().toISOString(),
           updated_at:                  new Date().toISOString(),
         })
@@ -146,6 +170,18 @@ export async function POST(request: Request) {
         is_unincorporated:           property.is_unincorporated,
         latitude:                    property.latitude,
         longitude:                   property.longitude,
+        legal_desc:                  property.legal_desc,
+        zoning:                      property.zoning,
+        levy_code:                   property.levy_code,
+        levy_jurisdiction:           property.levy_jurisdiction,
+        taxable_land_value:          property.taxable_land_value,
+        taxable_improvement_value:   property.taxable_improvement_value,
+        tax_val_reason:              property.tax_val_reason,
+        new_construction:            property.new_construction,
+        tax_account_number:          property.tax_account_number,
+        plat_name:                   property.plat_name,
+        plat_lot:                    property.plat_lot,
+        plat_block:                  property.plat_block,
         kc_data_last_synced:         new Date().toISOString(),
       })
       .select('id')

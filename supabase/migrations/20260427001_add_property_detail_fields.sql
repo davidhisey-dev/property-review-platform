@@ -1,0 +1,13 @@
+ALTER TABLE properties
+  ADD COLUMN IF NOT EXISTS legal_desc TEXT,
+  ADD COLUMN IF NOT EXISTS zoning TEXT,
+  ADD COLUMN IF NOT EXISTS levy_code TEXT,
+  ADD COLUMN IF NOT EXISTS levy_jurisdiction TEXT,
+  ADD COLUMN IF NOT EXISTS taxable_land_value INTEGER,
+  ADD COLUMN IF NOT EXISTS taxable_improvement_value INTEGER,
+  ADD COLUMN IF NOT EXISTS tax_val_reason TEXT,
+  ADD COLUMN IF NOT EXISTS new_construction BOOLEAN,
+  ADD COLUMN IF NOT EXISTS tax_account_number TEXT,
+  ADD COLUMN IF NOT EXISTS plat_name TEXT,
+  ADD COLUMN IF NOT EXISTS plat_lot TEXT,
+  ADD COLUMN IF NOT EXISTS plat_block TEXT;

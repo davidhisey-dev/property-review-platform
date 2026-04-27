@@ -28,6 +28,18 @@ type Property = {
   is_unincorporated: boolean | null
   latitude: number | null
   longitude: number | null
+  legal_desc: string | null
+  zoning: string | null
+  levy_code: string | null
+  levy_jurisdiction: string | null
+  taxable_land_value: number | null
+  taxable_improvement_value: number | null
+  tax_val_reason: string | null
+  new_construction: boolean | null
+  tax_account_number: string | null
+  plat_name: string | null
+  plat_lot: string | null
+  plat_block: string | null
 }
 
 type Review = {
@@ -314,6 +326,167 @@ export default function PropertyDetailPage() {
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Property Details Section */}
+        {(() => {
+          const taxableVsAppraisedDiffers =
+            property.taxable_land_value != null &&
+            property.appraised_land_value != null &&
+            property.appraised_land_value > 0 &&
+            Math.abs(property.taxable_land_value - property.appraised_land_value) /
+              property.appraised_land_value > 0.05
+
+          const platLine = property.plat_name
+            ? [property.plat_name, property.plat_lot ? `Lot ${property.plat_lot}` : null, property.plat_block ? `Block ${property.plat_block}` : null]
+                .filter(Boolean).join(' ')
+            : null
+
+          const detailRows = [
+            property.zoning           ? { label: 'Zoning',             value: property.zoning } : null,
+            property.legal_desc       ? { label: 'Legal Description',   value: property.legal_desc.length > 100 ? property.legal_desc.slice(0, 100) + '…' : property.legal_desc } : null,
+            platLine                  ? { label: 'Plat',                value: platLine } : null,
+            property.new_construction ? { label: 'New Construction',    value: 'Yes' } : null,
+            property.levy_jurisdiction? { label: 'Levy Jurisdiction',   value: property.levy_jurisdiction } : null,
+            property.tax_val_reason   ? { label: 'Tax Valuation Note',  value: property.tax_val_reason } : null,
+          ].filter(Boolean) as { label: string; value: string }[]
+
+          if (detailRows.length === 0 && !taxableVsAppraisedDiffers) return null
+
+          return (
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              border: '1px solid #e5e7eb',
+              padding: '1.5rem',
+              marginBottom: '1.5rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+              <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
+                Property Details
+              </h2>
+
+              {taxableVsAppraisedDiffers && (
+                <div style={{
+                  backgroundColor: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  borderRadius: '8px',
+                  padding: '0.625rem 0.875rem',
+                  marginBottom: '1rem',
+                  fontSize: '0.8rem',
+                  color: '#92400e',
+                }}>
+                  Taxable value differs from appraised — exemption may apply
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {detailRows.map(row => (
+                  <div key={row.label}>
+                    <p style={{ margin: '0 0 0.15rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {row.label}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '0.9rem', color: '#111827', fontWeight: '500' }}>
+                      {row.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Public Records Section */}
+        <div style={{
+          backgroundColor: 'white',
+          borderRadius: '12px',
+          border: '1px solid #e5e7eb',
+          padding: '1.5rem',
+          marginBottom: '1.5rem',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}>
+          <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
+            Public Records
+          </h2>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+
+            {/* Link 1 — Tax & Assessment Records */}
+            {property.parcel_number && (
+              <a
+                href={`https://blue.kingcounty.com/Assessor/eRealProperty/Dashboard.aspx?ParcelNbr=${property.parcel_number}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.875rem 1rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  minHeight: '48px',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
+                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+              >
+                <div>
+                  <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
+                    View Tax &amp; Assessment Records
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#6b7280' }}>
+                    King County Department of Assessments
+                  </p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" />
+                  <line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
+            )}
+
+            {/* Link 2 — Lien & Deed Records */}
+            <a
+              href="https://recordsearch.kingcounty.gov/LandmarkWeb/search/index"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.875rem 1rem',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                minHeight: '48px',
+                transition: 'background-color 0.15s ease',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <div>
+                <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
+                  Search Lien &amp; Deed Records
+                </p>
+                <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                  King County Recorder&apos;s Office
+                </p>
+                {property.parcel_number && (
+                  <p style={{ margin: 0, fontSize: '0.7rem', color: '#9ca3af' }}>
+                    Search by Parcel ID: {property.parcel_number}
+                  </p>
+                )}
+              </div>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </a>
+
           </div>
         </div>
 
