@@ -1,16 +1,28 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 
 export const NAV_H = 56
 
+const MB_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ''
+
+// ─── Types (self-contained search mode) ──────────────────────────────────────
+
+type GeocodeSuggestion = {
+  place_name: string
+  center: [number, number]
+  text: string
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
 type Props = {
   isAdmin?: boolean
   displayName?: string
   hideNav?: boolean
-  // Search — only passed from dashboard
+  // Dashboard-controlled mode: dashboard manages all search state and passes callbacks
   showSearch?: boolean
   query?: string
   searching?: boolean
@@ -19,6 +31,8 @@ type Props = {
   onSearchNow?: () => void
   onSearchFocus?: () => void
   onSearchBlur?: () => void
+  // Self-contained mode: AppHeader manages search internally, calls this on resolved result
+  onSearchSelect?: (result: { address: string; lat: number; lng: number; propertyId: string | null }) => void
 }
 
 export default function AppHeader({
@@ -33,10 +47,74 @@ export default function AppHeader({
   onSearchNow,
   onSearchFocus,
   onSearchBlur,
+  onSearchSelect,
 }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const [drawerOpen, setDrawerOpen] = useState(false)
+
+  // ─── Self-contained search state ────────────────────────────────────────────
+  // Only active when onSearchSelect is provided. Dashboard mode ignores all of these.
+  const selfContained = !!onSearchSelect
+  const [ownQuery, setOwnQuery] = useState('')
+  const [ownSuggestions, setOwnSuggestions] = useState<GeocodeSuggestion[]>([])
+  const [ownFocused, setOwnFocused] = useState(false)
+  const ownSelectedRef = useRef(false)
+
+  const runOwnGeocoding = useCallback(async (q: string) => {
+    try {
+      const params = new URLSearchParams({
+        access_token: MB_TOKEN,
+        types: 'address',
+        country: 'US',
+        bbox: '-122.5434,47.1842,-121.3046,47.7776',
+        proximity: '-122.0651,47.4502',
+        autocomplete: 'true',
+        fuzzy_match: 'false',
+        limit: '10',
+      })
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?${params.toString()}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (data.features) {
+        const houseNum = q.match(/^\d+/)?.[0]
+        const filtered = (data.features as GeocodeSuggestion[]).filter(f => {
+          if (houseNum && !f.place_name.startsWith(houseNum)) return false
+          const streetPart = f.place_name.split(',')[0]
+          if (!streetPart.includes(' ')) return false
+          return true
+        })
+        setOwnSuggestions(filtered)
+      }
+    } catch {
+      // Suggestions are supplemental — don't show an error
+    }
+  }, [])
+
+  // Debounced geocoding for self-contained mode
+  useEffect(() => {
+    if (!selfContained) return
+    if (ownSelectedRef.current) return
+    if (ownQuery.trim().length < 2) { setOwnSuggestions([]); return }
+    const timer = setTimeout(() => runOwnGeocoding(ownQuery), 300)
+    return () => clearTimeout(timer)
+  }, [ownQuery, selfContained, runOwnGeocoding])
+
+  const handleOwnSearchNow = useCallback(() => {
+    if (ownSelectedRef.current) return
+    if (ownQuery.trim().length < 2) return
+    runOwnGeocoding(ownQuery)
+  }, [ownQuery, runOwnGeocoding])
+
+  const handleOwnSelect = useCallback((suggestion: GeocodeSuggestion) => {
+    const shortAddress = suggestion.place_name.split(',')[0]
+    ownSelectedRef.current = true
+    setOwnSuggestions([])
+    setOwnQuery(shortAddress)
+    onSearchSelect!({ address: shortAddress, lat: suggestion.center[1], lng: suggestion.center[0], propertyId: null })
+  }, [onSearchSelect])
+
+  // ─── Shared ───────────────────────────────────────────────────────────────────
 
   const handleSignOut = async () => {
     const supabase = createClient()
@@ -53,6 +131,10 @@ export default function AppHeader({
     { label: 'Account', path: '/account' },
     ...(isAdmin ? [{ label: 'Admin', path: '/admin' }] : []),
   ]
+
+  // Derived values for the input
+  const inputValue  = selfContained ? ownQuery : query
+  const isSearching = selfContained ? false    : searching
 
   return (
     <>
@@ -85,7 +167,7 @@ export default function AppHeader({
             whiteSpace: 'nowrap',
           }}
         >
-          Adam's List
+          Adam&apos;s List
         </span>
 
         {/* Search input — flex-grow, centered */}
@@ -93,16 +175,29 @@ export default function AppHeader({
           <div style={{ flex: 1, position: 'relative', maxWidth: 400, margin: '0 auto' }}>
             <input
               type="text"
-              value={query}
-              onChange={e => onQueryChange?.(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') onSearchNow?.() }}
-              onFocus={() => onSearchFocus?.()}
-              onBlur={() => onSearchBlur?.()}
+              value={inputValue}
+              onChange={e => {
+                if (selfContained) {
+                  ownSelectedRef.current = false
+                  setOwnQuery(e.target.value)
+                  if (!e.target.value.trim()) setOwnSuggestions([])
+                } else {
+                  onQueryChange?.(e.target.value)
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  if (selfContained) handleOwnSearchNow()
+                  else onSearchNow?.()
+                }
+              }}
+              onFocus={() => { if (selfContained) setOwnFocused(true); else onSearchFocus?.() }}
+              onBlur={() => { if (selfContained) setOwnFocused(false); else onSearchBlur?.() }}
               placeholder="Search an address..."
               style={{
                 width: '100%',
                 paddingLeft: 12,
-                paddingRight: query.length > 0 ? 76 : 44,
+                paddingRight: inputValue.length > 0 ? 76 : 44,
                 paddingTop: 8,
                 paddingBottom: 8,
                 fontSize: '0.875rem',
@@ -115,10 +210,18 @@ export default function AppHeader({
               }}
             />
             <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
-              {query.length > 0 && (
+              {inputValue.length > 0 && (
                 <button
                   onMouseDown={e => e.preventDefault()}
-                  onClick={() => onClear?.()}
+                  onClick={() => {
+                    if (selfContained) {
+                      ownSelectedRef.current = false
+                      setOwnQuery('')
+                      setOwnSuggestions([])
+                    } else {
+                      onClear?.()
+                    }
+                  }}
                   style={{ width: 32, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
                 >
                   <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
@@ -128,11 +231,11 @@ export default function AppHeader({
               )}
               <button
                 onMouseDown={e => e.preventDefault()}
-                onClick={() => onSearchNow?.()}
-                disabled={searching}
+                onClick={() => { if (selfContained) handleOwnSearchNow(); else onSearchNow?.() }}
+                disabled={isSearching}
                 style={{ width: 40, height: 38, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
               >
-                {searching
+                {isSearching
                   ? <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                   : (
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -184,6 +287,72 @@ export default function AppHeader({
         )}
       </div>
 
+      {/* ── Self-contained search overlays (property / review pages) ── */}
+      {selfContained && showSearch && (
+        <>
+          {/* Suggestions dropdown */}
+          {ownSuggestions.length > 0 && (
+            <div style={{
+              position: 'fixed',
+              top: NAV_H + 4,
+              left: 12, right: 12,
+              zIndex: 9998,
+              backgroundColor: 'white',
+              borderRadius: 10,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              overflow: 'hidden',
+            }}>
+              {ownSuggestions.map((s, i) => {
+                const parts = s.place_name.split(', ')
+                const primary = parts.length >= 2 ? `${parts[0]}, ${parts[1]}` : parts[0]
+                const stateZipRaw = parts.find(p => /[A-Z][a-z]+ \d{5}/.test(p)) ?? ''
+                const secondary = stateZipRaw.replace(
+                  /^([A-Z][a-z]+(?:\s[A-Z][a-z]+)*)\s(\d{5})$/,
+                  (_, state: string, zip: string) => {
+                    const abbrev: Record<string, string> = {
+                      Washington: 'WA', Oregon: 'OR', Idaho: 'ID', Montana: 'MT', California: 'CA',
+                    }
+                    return `${abbrev[state] ?? state} ${zip}`
+                  }
+                )
+                return (
+                  <button
+                    key={i}
+                    onClick={() => handleOwnSelect(s)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      padding: '12px 16px',
+                      borderBottom: i < ownSuggestions.length - 1 ? '1px solid #f3f4f6' : 'none',
+                      backgroundColor: 'transparent', cursor: 'pointer',
+                      minHeight: 48, display: 'block',
+                      border: i < ownSuggestions.length - 1 ? '0 0 1px 0 solid #f3f4f6' : 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#1f2937' }}>{primary}</div>
+                    {secondary && <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: 2 }}>{secondary}</div>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Helper text */}
+          {ownFocused && ownSuggestions.length === 0 && ownQuery.trim().length > 0 && ownQuery.trim().length < 3 && (
+            <p style={{
+              position: 'fixed',
+              top: NAV_H + 8,
+              left: 16, right: 16,
+              zIndex: 9998,
+              fontSize: '0.75rem',
+              color: '#9ca3af',
+              margin: 0,
+            }}>
+              Type a house number and street name to search
+            </p>
+          )}
+        </>
+      )}
+
       {/* ── Drawer backdrop ── */}
       {drawerOpen && (
         <div
@@ -221,7 +390,7 @@ export default function AppHeader({
         }}>
           {displayName
             ? <span style={{ fontSize: '0.8125rem', color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>{displayName}</span>
-            : <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#111827' }}>Adam's List</span>
+            : <span style={{ fontSize: '0.875rem', fontWeight: 700, color: '#111827' }}>Adam&apos;s List</span>
           }
           <button
             onClick={() => setDrawerOpen(false)}

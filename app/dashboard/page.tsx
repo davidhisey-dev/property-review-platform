@@ -232,6 +232,7 @@ export default function DashboardPage() {
   const [searchError, setSearchError] = useState('')
   const [mismatch, setMismatch] = useState<MismatchResult | null>(null)
   const [inputFocused, setInputFocused] = useState(false)
+  const [pendingLookup, setPendingLookup] = useState<{ address: string; lat: number; lng: number } | null>(null)
 
   // ─── Window height ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -353,6 +354,62 @@ export default function DashboardPage() {
     fetchAgg()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // ─── Background KC lookup after URL-param navigation ─────────────────────
+  useEffect(() => {
+    if (!pendingLookup) return
+    const { address, lat, lng } = pendingLookup
+    const run = async () => {
+      try {
+        const normalizedAddr = normalizeAddress(address)
+        const searchRes = await fetch(`/api/property/search?address=${encodeURIComponent(normalizedAddr)}`)
+        const searchData = searchRes.ok ? await searchRes.json() : null
+        const property = searchData?.property ?? searchData?.properties?.[0]
+
+        if (!property) {
+          setExploreResult(prev => prev ? { ...prev, loading: false } : null)
+          setPendingLookup(null)
+          return
+        }
+
+        const cacheRes = await fetch('/api/property/cache', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(property),
+        })
+        const cacheData = cacheRes.ok ? await cacheRes.json() : {}
+        const propertyId: string | null = cacheData.id ?? null
+
+        let reviewCount: number | null = null
+        if (propertyId) {
+          const { data: pp } = await supabase
+            .from('property_profiles')
+            .select('review_count')
+            .eq('property_id', propertyId)
+            .single()
+          reviewCount = pp?.review_count ?? 0
+        }
+
+        const kcLat = property.latitude ? Number(property.latitude) : lat
+        const kcLng = property.longitude ? Number(property.longitude) : lng
+        const kcAddress = property.address_full || address
+
+        setExploreResult({ address: kcAddress, latitude: kcLat, longitude: kcLng, propertyId, loading: false, reviewCount })
+
+        if (Math.abs(kcLat - lat) > 0.001 || Math.abs(kcLng - lng) > 0.001) {
+          mapRef.current?.fitBounds(
+            [[kcLng - 0.01, kcLat - 0.01], [kcLng + 0.01, kcLat + 0.01]],
+            { padding: 50, duration: 800 }
+          )
+        }
+      } catch {
+        setExploreResult(prev => prev ? { ...prev, loading: false } : null)
+      }
+      setPendingLookup(null)
+    }
+    run()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLookup])
 
   // ─── Panel drag ────────────────────────────────────────────────────────────
 
@@ -743,6 +800,30 @@ export default function DashboardPage() {
           mapStyle="mapbox://styles/mapbox/streets-v12"
           mapboxAccessToken={token}
           onClick={() => { setSelectedPin(null); setSelectedAggPin(null) }}
+          onLoad={() => {
+            // Read URL params while they're still present (before router.replace clears them)
+            const urlParams = new URLSearchParams(window.location.search)
+            const urlSearch = urlParams.get('search')
+            const urlLat = urlParams.get('lat')
+            const urlLng = urlParams.get('lng')
+            if (!urlSearch || !urlLat || !urlLng) return
+
+            const lat = parseFloat(urlLat)
+            const lng = parseFloat(urlLng)
+
+            // Show pin immediately with loading state — KC lookup happens in background
+            setExploreResult({ address: urlSearch, latitude: lat, longitude: lng, propertyId: null, loading: true })
+            setPendingLookup({ address: urlSearch, lat, lng })
+            setTimeout(() => {
+              mapRef.current?.fitBounds(
+                [[lng - 0.01, lat - 0.01], [lng + 0.01, lat + 0.01]],
+                { padding: 50, duration: 800 }
+              )
+            }, 300)
+
+            // Clear params so back navigation returns to the property page cleanly
+            router.replace('/dashboard')
+          }}
         >
           <NavigationControl position="bottom-right" />
           <GeolocateControl

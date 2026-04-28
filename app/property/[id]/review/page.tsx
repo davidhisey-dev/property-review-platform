@@ -771,10 +771,15 @@ export default function ReviewPage() {
 
   // ─── Loading ──────────────────────────────────────────────────────────────────
 
+  const handleSearchSelect = (result: { address: string; lat: number; lng: number; propertyId: string | null }) => {
+    const p = new URLSearchParams({ search: result.address, lat: String(result.lat), lng: String(result.lng) })
+    router.push(`/dashboard?${p.toString()}`)
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} showSearch onSearchSelect={handleSearchSelect} />
         <div className="flex items-center justify-center pt-24 text-gray-400 text-sm">Loading…</div>
       </div>
     )
@@ -785,7 +790,7 @@ export default function ReviewPage() {
   if (submitted) {
     return (
       <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+        <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} showSearch onSearchSelect={handleSearchSelect} />
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="bg-white rounded-2xl border shadow-sm max-w-sm w-full p-8 text-center">
             <div className="text-5xl mb-4">✓</div>
@@ -823,7 +828,7 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ paddingTop: NAV_H }}>
-      <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} />
+      <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} showSearch onSearchSelect={handleSearchSelect} />
 
       <div className="max-w-2xl mx-auto px-4 py-5 pb-32" onClick={() => setErrorBarDismissed(true)}>
 
