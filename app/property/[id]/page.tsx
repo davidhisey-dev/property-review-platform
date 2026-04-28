@@ -42,11 +42,34 @@ type Property = {
   plat_block: string | null
 }
 
+type PropertyProfile = {
+  review_count: number
+  avg_overall_rating: number | null
+  avg_payment_timeliness: number | null
+  avg_ease_of_collecting: number | null
+  avg_final_payment_experience: number | null
+  avg_scope_clarity: number | null
+  avg_change_order_willingness: number | null
+  avg_ease_of_interaction: number | null
+  avg_responsiveness: number | null
+  avg_professionalism: number | null
+  avg_decision_consistency: number | null
+  avg_timeline_expectations: number | null
+  avg_plan_readiness: number | null
+  avg_financial_readiness: number | null
+  avg_site_accessibility: number | null
+  no_call_no_show_count: number
+  flag_payment_delays_count: number
+  flag_legal_action_count: number
+  flag_disputed_scope_count: number
+  flag_aggressive_behaviour_count: number
+  flag_safety_challenges_count: number
+}
+
 type Review = {
   id: string
   user_id: string
   overall_rating: number | null
-  // Section ratings
   payment_timeliness: number | null
   ease_of_collecting_payment: number | null
   final_payment_experience: number | null
@@ -60,31 +83,25 @@ type Review = {
   plan_design_readiness: number | null
   financial_readiness: number | null
   site_accessibility: number | null
-  // Flags
   paid_on_time: boolean | null
   no_call_no_show: boolean | null
   completed_project: boolean | null
   change_order_count: number | null
-  // Job info
   job_size: string | null
   job_value: number | null
   job_description: string | null
   job_completion_date: string | null
   job_completed_at: string | null
-  // Contact & identity
   primary_contact_name: string | null
   primary_contact_is_owner: boolean | null
   contractor_role: string | null
   would_work_again: string | null
-  // Narrative
   watch_out_for: string | null
   what_worked_well: string | null
   title: string | null
   body: string | null
-  // Timestamps
   created_at: string
   updated_at: string
-  // Relations
   users: {
     display_name: string
     company_name: string
@@ -139,12 +156,12 @@ function formatDateShort(val: string | null) {
 
 // ─── Star display with half-star support ─────────────────────────────────────
 
-function StarDisplay({ rating, size = 20 }: { rating: number | null; size?: number }) {
-  if (rating == null) return null
+function StarDisplay({ rating, size = 20, showEmpty = false }: { rating: number | null; size?: number; showEmpty?: boolean }) {
+  if (rating == null && !showEmpty) return null
   return (
     <div style={{ display: 'flex', gap: '1px' }}>
       {[1, 2, 3, 4, 5].map(pos => {
-        const fill = Math.min(1, Math.max(0, rating - (pos - 1)))
+        const fill = rating == null ? 0 : Math.min(1, Math.max(0, rating - (pos - 1)))
         const isHalf = fill >= 0.25 && fill < 0.75
         const isFull = fill >= 0.75
         return (
@@ -181,6 +198,20 @@ function Pill({ label, bg, color }: { label: string; bg: string; color: string }
   )
 }
 
+// ─── Chevron icon ─────────────────────────────────────────────────────────────
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, transition: 'transform 0.2s ease', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PropertyDetailPage() {
@@ -194,9 +225,11 @@ export default function PropertyDetailPage() {
 
   const fetchedRef = useRef<string | null>(null)
   const [property, setProperty] = useState<Property | null>(null)
+  const [propertyProfile, setPropertyProfile] = useState<PropertyProfile | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
   const [userHistory, setUserHistory] = useState<UserHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
+  const [parcelOpen, setParcelOpen] = useState(false)
 
   useEffect(() => {
     if (fetchedRef.current === id) return
@@ -235,6 +268,23 @@ export default function PropertyDetailPage() {
           { user_id: user.id, property_id: id, last_viewed_at: new Date().toISOString() },
           { onConflict: 'user_id,property_id' }
         )
+
+      const { data: ppData } = await supabase
+        .from('property_profiles')
+        .select(`
+          review_count, avg_overall_rating,
+          avg_payment_timeliness, avg_ease_of_collecting, avg_final_payment_experience,
+          avg_scope_clarity, avg_change_order_willingness,
+          avg_ease_of_interaction, avg_responsiveness, avg_professionalism, avg_decision_consistency,
+          avg_timeline_expectations, avg_plan_readiness, avg_financial_readiness,
+          avg_site_accessibility,
+          no_call_no_show_count, flag_payment_delays_count, flag_legal_action_count,
+          flag_disputed_scope_count, flag_aggressive_behaviour_count, flag_safety_challenges_count
+        `)
+        .eq('property_id', id)
+        .single()
+
+      if (ppData) setPropertyProfile(ppData as unknown as PropertyProfile)
 
       const { data: reviewData } = await supabase
         .from('reviews')
@@ -298,6 +348,70 @@ export default function PropertyDetailPage() {
 
   if (!property) return null
 
+  // ─── Derived values for At a Glance ────────────────────────────────────────
+
+  const reviewCount = propertyProfile?.review_count ?? 0
+
+  const wwaYes   = reviews.filter(r => r.would_work_again === 'yes').length
+  const wwaNo    = reviews.filter(r => r.would_work_again === 'no').length
+  const wwaTerms = reviews.filter(r => r.would_work_again === 'higher_price_stricter_terms').length
+
+  const tagCounts: Record<string, number> = {}
+  reviews.forEach(r => {
+    r.review_client_pattern_tags?.forEach(t => {
+      const label = t.client_pattern_tags?.label
+      if (label) tagCounts[label] = (tagCounts[label] ?? 0) + 1
+    })
+  })
+  const topTags = Object.entries(tagCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([label]) => label)
+
+  const pp = propertyProfile
+  const glanceAverages = pp ? [
+    { label: 'Payment & Financial',    avg: avgRating([pp.avg_payment_timeliness, pp.avg_ease_of_collecting, pp.avg_final_payment_experience]) },
+    { label: 'Scope & Change',          avg: avgRating([pp.avg_scope_clarity, pp.avg_change_order_willingness]) },
+    { label: 'Communication',           avg: avgRating([pp.avg_ease_of_interaction, pp.avg_responsiveness, pp.avg_professionalism, pp.avg_decision_consistency]) },
+    { label: 'Timeline & Preparedness', avg: avgRating([pp.avg_timeline_expectations, pp.avg_plan_readiness, pp.avg_financial_readiness]) },
+    { label: 'Site Conditions',         avg: pp.avg_site_accessibility },
+  ].filter(s => s.avg != null) as { label: string; avg: number }[] : []
+
+  const flagItems = pp ? [
+    { label: 'No Call / No Show reported',     count: pp.no_call_no_show_count,           serious: true,  prefix: '⚠️' },
+    { label: 'payment delay reports',           count: pp.flag_payment_delays_count,       serious: false, prefix: '' },
+    { label: 'legal action reports',            count: pp.flag_legal_action_count,         serious: false, prefix: '' },
+    { label: 'disputed scope reports',          count: pp.flag_disputed_scope_count,       serious: false, prefix: '' },
+    { label: 'aggressive behaviour reports',    count: pp.flag_aggressive_behaviour_count, serious: true,  prefix: '⚠️' },
+    { label: 'safety challenge reports',        count: pp.flag_safety_challenges_count,    serious: true,  prefix: '⚠️' },
+  ].filter(f => f.count > 0) : []
+
+  // ─── Parcel Details internal sections ──────────────────────────────────────
+
+  const taxableVsAppraisedDiffers =
+    property.taxable_land_value != null &&
+    property.appraised_land_value != null &&
+    property.appraised_land_value > 0 &&
+    Math.abs(property.taxable_land_value - property.appraised_land_value) /
+      property.appraised_land_value > 0.05
+
+  const platLine = property.plat_name
+    ? [property.plat_name, property.plat_lot ? `Lot ${property.plat_lot}` : null, property.plat_block ? `Block ${property.plat_block}` : null]
+        .filter(Boolean).join(' ')
+    : null
+
+  const detailRows = [
+    property.zoning            ? { label: 'Zoning',            value: property.zoning } : null,
+    property.legal_desc        ? { label: 'Legal Description',  value: property.legal_desc.length > 100 ? property.legal_desc.slice(0, 100) + '…' : property.legal_desc } : null,
+    platLine                   ? { label: 'Plat',               value: platLine } : null,
+    property.new_construction  ? { label: 'New Construction',   value: 'Yes' } : null,
+    property.levy_jurisdiction ? { label: 'Levy Jurisdiction',  value: property.levy_jurisdiction } : null,
+    property.tax_val_reason    ? { label: 'Tax Valuation Note', value: property.tax_val_reason } : null,
+  ].filter(Boolean) as { label: string; value: string }[]
+
+  const submittedHistory = userHistory.filter(r => r.status === 'submitted')
+  const draft = userHistory.find(r => r.status === 'draft')
+
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingTop: NAV_H }}>
       <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} showSearch onSearchSelect={handleSearchSelect} />
@@ -319,16 +433,32 @@ export default function PropertyDetailPage() {
           ← Back to Map
         </button>
 
-        {/* Property Header */}
+        {/* ── PART 1: Property Header ── */}
         <div style={{
           backgroundColor: 'white', borderRadius: '12px',
           border: '1px solid #e5e7eb', padding: '1.5rem',
           marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
         }}>
-          <h1 style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: '700', color: '#111827' }}>
-            {property.address_full}
-          </h1>
-          <p style={{ margin: '0 0 1.5rem', color: '#6b7280', fontSize: '0.95rem' }}>
+          {/* Address row + Leave a Review button */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.2rem' }}>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700', color: '#111827', lineHeight: 1.25 }}>
+              {property.address_full}
+            </h1>
+            <button
+              onClick={() => router.push(`/property/${id}/review`)}
+              style={{
+                flexShrink: 0,
+                padding: '0.5rem 1rem', backgroundColor: '#2563eb', color: 'white',
+                border: 'none', borderRadius: '8px', cursor: 'pointer',
+                fontSize: '0.875rem', fontWeight: '500', minHeight: '44px',
+              }}
+            >
+              + Leave a Review
+            </button>
+          </div>
+
+          {/* City / State / Zip */}
+          <p style={{ margin: '0 0 1.25rem', color: '#6b7280', fontSize: '0.95rem' }}>
             {property.city}, {property.state} {property.zip_code}
             {property.is_unincorporated && (
               <span style={{
@@ -341,198 +471,328 @@ export default function PropertyDetailPage() {
             )}
           </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
-            {[
-              { label: 'Present Use',        value: property.present_use || 'N/A' },
-              { label: 'Property Type',      value: property.property_type || 'N/A' },
-              { label: 'Lot Size',           value: property.square_feet_lot ? `${property.square_feet_lot.toLocaleString()} sq ft` : 'N/A' },
-              { label: 'Acreage',            value: property.acreage ? `${property.acreage.toFixed(3)} acres` : 'N/A' },
-              { label: 'Assessed Value',     value: formatCurrency(property.appraised_total_value) },
-              { label: 'Land Value',         value: formatCurrency(property.appraised_land_value) },
-              { label: 'Improvement Value',  value: formatCurrency(property.appraised_improvement_value) },
-              { label: 'Tax Year',           value: property.tax_year?.toString() || 'N/A' },
-              { label: 'Last Sale Price',    value: formatCurrency(property.last_sale_price) },
-              { label: 'Last Sale Date',     value: formatDate(property.last_sale_date) },
-              { label: 'Parcel Number',      value: property.parcel_number },
-            ].map(item => (
-              <div key={item.label}>
-                <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {item.label}
-                </p>
-                <p style={{ margin: 0, fontSize: '0.9rem', color: '#111827', fontWeight: '500' }}>
-                  {item.value}
-                </p>
+          {/* Star rating summary */}
+          {reviewCount > 0 ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.3rem' }}>
+                <StarDisplay rating={propertyProfile?.avg_overall_rating ?? null} size={26} showEmpty />
+                {propertyProfile?.avg_overall_rating != null && (
+                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: '#111827' }}>
+                    {propertyProfile.avg_overall_rating.toFixed(1)}
+                  </span>
+                )}
+                <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>average</span>
               </div>
-            ))}
-          </div>
+              <p style={{ margin: 0, fontSize: '0.825rem', color: '#9ca3af' }}>
+                {reviewCount} contractor review{reviewCount !== 1 ? 's' : ''}
+              </p>
+            </div>
+          ) : (
+            <p style={{ margin: 0, fontSize: '0.875rem', color: '#9ca3af' }}>No reviews yet</p>
+          )}
         </div>
 
-        {/* Property Details Section */}
-        {(() => {
-          const taxableVsAppraisedDiffers =
-            property.taxable_land_value != null &&
-            property.appraised_land_value != null &&
-            property.appraised_land_value > 0 &&
-            Math.abs(property.taxable_land_value - property.appraised_land_value) /
-              property.appraised_land_value > 0.05
+        {/* ── PART 2: At a Glance ── */}
+        {reviewCount > 0 && (
+          <div style={{
+            backgroundColor: 'white', borderRadius: '12px',
+            border: '1px solid #e5e7eb', padding: '1.5rem',
+            marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}>
+            <h2 style={{ margin: '0 0 1.25rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
+              At a Glance
+            </h2>
 
-          const platLine = property.plat_name
-            ? [property.plat_name, property.plat_lot ? `Lot ${property.plat_lot}` : null, property.plat_block ? `Block ${property.plat_block}` : null]
-                .filter(Boolean).join(' ')
-            : null
+            {/* Would Work Again */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                Would Work Again
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {wwaYes > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#166534', fontWeight: '500' }}>✓</span>
+                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would work again:</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#166534' }}>{wwaYes}</span>
+                  </div>
+                )}
+                {wwaNo > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#991b1b', fontWeight: '500' }}>✕</span>
+                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would not work again:</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#991b1b' }}>{wwaNo}</span>
+                  </div>
+                )}
+                {wwaTerms > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.875rem', color: '#92400e', fontWeight: '500' }}>~</span>
+                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Only with stricter terms:</span>
+                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#92400e' }}>{wwaTerms}</span>
+                  </div>
+                )}
+                {wwaYes === 0 && wwaNo === 0 && wwaTerms === 0 && (
+                  <span style={{ fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>Not recorded</span>
+                )}
+              </div>
+            </div>
 
-          const detailRows = [
-            property.zoning            ? { label: 'Zoning',            value: property.zoning } : null,
-            property.legal_desc        ? { label: 'Legal Description',  value: property.legal_desc.length > 100 ? property.legal_desc.slice(0, 100) + '…' : property.legal_desc } : null,
-            platLine                   ? { label: 'Plat',               value: platLine } : null,
-            property.new_construction  ? { label: 'New Construction',   value: 'Yes' } : null,
-            property.levy_jurisdiction ? { label: 'Levy Jurisdiction',  value: property.levy_jurisdiction } : null,
-            property.tax_val_reason    ? { label: 'Tax Valuation Note', value: property.tax_val_reason } : null,
-          ].filter(Boolean) as { label: string; value: string }[]
-
-          if (detailRows.length === 0 && !taxableVsAppraisedDiffers) return null
-
-          return (
-            <div style={{
-              backgroundColor: 'white', borderRadius: '12px',
-              border: '1px solid #e5e7eb', padding: '1.5rem',
-              marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}>
-              <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
-                Property Details
-              </h2>
-              {taxableVsAppraisedDiffers && (
-                <div style={{
-                  backgroundColor: '#fffbeb', border: '1px solid #fde68a',
-                  borderRadius: '8px', padding: '0.625rem 0.875rem',
-                  marginBottom: '1rem', fontSize: '0.8rem', color: '#92400e',
-                }}>
-                  Taxable value differs from appraised — exemption may apply
+            {/* Section rating averages */}
+            {glanceAverages.length > 0 && (
+              <>
+                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                    Section Averages
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {glanceAverages.map(s => (
+                      <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.875rem', color: '#374151' }}>{s.label}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                          <StarDisplay rating={s.avg} size={14} />
+                          <span style={{ fontSize: '0.8rem', color: '#6b7280', minWidth: '2rem', textAlign: 'right' }}>{s.avg.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                {detailRows.map(row => (
-                  <div key={row.label}>
-                    <p style={{ margin: '0 0 0.15rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {row.label}
+              </>
+            )}
+
+            {/* Flag counts */}
+            {flagItems.length > 0 && (
+              <>
+                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                    Reported Issues
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                    {flagItems.map(f => (
+                      <div key={f.label} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                        backgroundColor: f.serious ? '#fef2f2' : '#fffbeb',
+                        border: `1px solid ${f.serious ? '#fecaca' : '#fde68a'}`,
+                        borderRadius: '8px',
+                        padding: '0.4rem 0.75rem',
+                        alignSelf: 'flex-start',
+                      }}>
+                        {f.prefix && <span style={{ fontSize: '0.875rem' }}>{f.prefix}</span>}
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: f.serious ? '#991b1b' : '#92400e' }}>
+                          {f.count}
+                        </span>
+                        <span style={{ fontSize: '0.875rem', color: f.serious ? '#991b1b' : '#92400e' }}>
+                          {f.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Top client pattern tags */}
+            {topTags.length > 0 && (
+              <>
+                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                <div>
+                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                    Common Tags
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    {topTags.map((tag, i) => (
+                      <Pill key={i} label={tag} bg="#f3f4f6" color="#374151" />
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── PART 3: Parcel Details (collapsible) ── */}
+        <div style={{
+          backgroundColor: 'white', borderRadius: '12px',
+          border: '1px solid #e5e7eb',
+          marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          overflow: 'hidden',
+        }}>
+          <button
+            onClick={() => setParcelOpen(o => !o)}
+            style={{
+              width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '1.25rem 1.5rem',
+              background: 'none', border: 'none', cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: '#111827' }}>Parcel Details</h2>
+            <Chevron open={parcelOpen} />
+          </button>
+
+          {parcelOpen && (
+            <div style={{ borderTop: '1px solid #e5e7eb', padding: '1.5rem' }}>
+
+              {/* Key facts grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                {[
+                  { label: 'Present Use',        value: property.present_use || 'N/A' },
+                  { label: 'Property Type',      value: property.property_type || 'N/A' },
+                  { label: 'Lot Size',           value: property.square_feet_lot ? `${property.square_feet_lot.toLocaleString()} sq ft` : 'N/A' },
+                  { label: 'Acreage',            value: property.acreage ? `${property.acreage.toFixed(3)} acres` : 'N/A' },
+                  { label: 'Assessed Value',     value: formatCurrency(property.appraised_total_value) },
+                  { label: 'Land Value',         value: formatCurrency(property.appraised_land_value) },
+                  { label: 'Improvement Value',  value: formatCurrency(property.appraised_improvement_value) },
+                  { label: 'Tax Year',           value: property.tax_year?.toString() || 'N/A' },
+                  { label: 'Last Sale Price',    value: formatCurrency(property.last_sale_price) },
+                  { label: 'Last Sale Date',     value: formatDate(property.last_sale_date) },
+                  { label: 'Parcel Number',      value: property.parcel_number },
+                ].map(item => (
+                  <div key={item.label}>
+                    <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {item.label}
                     </p>
                     <p style={{ margin: 0, fontSize: '0.9rem', color: '#111827', fontWeight: '500' }}>
-                      {row.value}
+                      {item.value}
                     </p>
                   </div>
                 ))}
               </div>
-            </div>
-          )
-        })()}
 
-        {/* Public Records Section */}
-        <div style={{
-          backgroundColor: 'white', borderRadius: '12px',
-          border: '1px solid #e5e7eb', padding: '1.5rem',
-          marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        }}>
-          <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
-            Public Records
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {property.parcel_number && (
-              <a
-                href={`https://blue.kingcounty.com/Assessor/eRealProperty/Dashboard.aspx?ParcelNbr=${property.parcel_number}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.875rem 1rem', border: '1px solid #e5e7eb', borderRadius: '8px',
-                  textDecoration: 'none', minHeight: '48px', transition: 'background-color 0.15s ease',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-              >
-                <div>
-                  <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
-                    View Tax &amp; Assessment Records
-                  </p>
-                  <p style={{ margin: 0, fontSize: '0.75rem', color: '#6b7280' }}>
-                    King County Department of Assessments
-                  </p>
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </a>
-            )}
-            <a
-              href="https://recordsearch.kingcounty.gov/LandmarkWeb/search/index"
-              target="_blank" rel="noopener noreferrer"
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '0.875rem 1rem', border: '1px solid #e5e7eb', borderRadius: '8px',
-                textDecoration: 'none', minHeight: '48px', transition: 'background-color 0.15s ease',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
-            >
-              <div>
-                <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
-                  Search Lien &amp; Deed Records
-                </p>
-                <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', color: '#6b7280' }}>
-                  King County Recorder&apos;s Office
-                </p>
+              {/* Additional detail rows */}
+              {(taxableVsAppraisedDiffers || detailRows.length > 0) && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: '#f3f4f6', marginBottom: '1.25rem' }} />
+
+                  {taxableVsAppraisedDiffers && (
+                    <div style={{
+                      backgroundColor: '#fffbeb', border: '1px solid #fde68a',
+                      borderRadius: '8px', padding: '0.625rem 0.875rem',
+                      marginBottom: '1rem', fontSize: '0.8rem', color: '#92400e',
+                    }}>
+                      Taxable value differs from appraised — exemption may apply
+                    </div>
+                  )}
+
+                  {detailRows.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                      {detailRows.map(row => (
+                        <div key={row.label}>
+                          <p style={{ margin: '0 0 0.15rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {row.label}
+                          </p>
+                          <p style={{ margin: 0, fontSize: '0.9rem', color: '#111827', fontWeight: '500' }}>
+                            {row.value}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Public Records links */}
+              <div style={{ height: '1px', backgroundColor: '#f3f4f6', marginBottom: '1.25rem' }} />
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Public Records
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {property.parcel_number && (
-                  <p style={{ margin: 0, fontSize: '0.7rem', color: '#9ca3af' }}>
-                    Search by Parcel ID: {property.parcel_number}
-                  </p>
+                  <a
+                    href={`https://blue.kingcounty.com/Assessor/eRealProperty/Dashboard.aspx?ParcelNbr=${property.parcel_number}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.875rem 1rem', border: '1px solid #e5e7eb', borderRadius: '8px',
+                      textDecoration: 'none', minHeight: '48px', transition: 'background-color 0.15s ease',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
+                    onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    <div>
+                      <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
+                        View Tax &amp; Assessment Records
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.75rem', color: '#6b7280' }}>
+                        King County Department of Assessments
+                      </p>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
                 )}
+                <a
+                  href="https://recordsearch.kingcounty.gov/LandmarkWeb/search/index"
+                  target="_blank" rel="noopener noreferrer"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.875rem 1rem', border: '1px solid #e5e7eb', borderRadius: '8px',
+                    textDecoration: 'none', minHeight: '48px', transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#f9fafb')}
+                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  <div>
+                    <p style={{ margin: '0 0 0.1rem', fontSize: '0.9rem', fontWeight: '500', color: '#111827' }}>
+                      Search Lien &amp; Deed Records
+                    </p>
+                    <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                      King County Recorder&apos;s Office
+                    </p>
+                    {property.parcel_number && (
+                      <p style={{ margin: 0, fontSize: '0.7rem', color: '#9ca3af' }}>
+                        Search by Parcel ID: {property.parcel_number}
+                      </p>
+                    )}
+                  </div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
               </div>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginLeft: '0.75rem' }}>
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </a>
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Contractor History Banner */}
-        {(() => {
-          const submittedHistory = userHistory.filter(r => r.status === 'submitted')
-          const draft = userHistory.find(r => r.status === 'draft')
-          if (submittedHistory.length === 0 && !draft) return null
-          return (
-            <div style={{
-              backgroundColor: 'white', borderRadius: '12px',
-              border: '1px solid #e5e7eb', padding: '1.25rem 1.5rem',
-              marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}>
-              <p style={{ margin: '0 0 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Your History
-              </p>
-              <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
-                My Reviews for this property: <span style={{ fontWeight: '500' }}>{submittedHistory.length}</span>
-              </p>
-              {submittedHistory.length > 0 && (
-                <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
-                  Last Review: <span style={{ fontWeight: '500' }}>{formatDate(submittedHistory[0].updated_at)}</span>
-                </p>
-              )}
-              {draft && (
-                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#92400e', lineHeight: '1.6' }}>
-                  ⚠️ You have a draft in progress —{' '}
-                  <button
-                    onClick={() => router.push(`/property/${id}/review?draftId=${draft.id}`)}
-                    style={{ background: 'none', border: 'none', padding: 0, color: '#d97706', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', textDecoration: 'underline' }}
-                  >
-                    Resume draft
-                  </button>
-                </p>
-              )}
-            </div>
-          )
-        })()}
+        {/* ── PART 4: Contractor Reviews ── */}
 
-        {/* Reviews Section Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        {/* Your History Banner */}
+        {(submittedHistory.length > 0 || draft) && (
+          <div style={{
+            backgroundColor: 'white', borderRadius: '12px',
+            border: '1px solid #e5e7eb', padding: '1.25rem 1.5rem',
+            marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              Your History
+            </p>
+            <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+              My Reviews for this property: <span style={{ fontWeight: '500' }}>{submittedHistory.length}</span>
+            </p>
+            {submittedHistory.length > 0 && (
+              <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+                Last Review: <span style={{ fontWeight: '500' }}>{formatDate(submittedHistory[0].updated_at)}</span>
+              </p>
+            )}
+            {draft && (
+              <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#92400e', lineHeight: '1.6' }}>
+                ⚠️ You have a draft in progress —{' '}
+                <button
+                  onClick={() => router.push(`/property/${id}/review?draftId=${draft.id}`)}
+                  style={{ background: 'none', border: 'none', padding: 0, color: '#d97706', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', textDecoration: 'underline' }}
+                >
+                  Resume draft
+                </button>
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Reviews section heading */}
+        <div style={{ marginBottom: '1rem' }}>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
             Contractor Reviews
             {reviews.length > 0 && (
@@ -545,16 +805,6 @@ export default function PropertyDetailPage() {
               </span>
             )}
           </h2>
-          <button
-            onClick={() => router.push(`/property/${id}/review`)}
-            style={{
-              padding: '0.5rem 1rem', backgroundColor: '#2563eb', color: 'white',
-              border: 'none', borderRadius: '8px', cursor: 'pointer',
-              fontSize: '0.875rem', fontWeight: '500', minHeight: '44px',
-            }}
-          >
-            + Leave a Review
-          </button>
         </div>
 
         {/* No Reviews State */}
