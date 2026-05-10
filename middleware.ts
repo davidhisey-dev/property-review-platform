@@ -32,7 +32,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: profile, error: profileError } = await supabase
     .from('users')
-    .select('registration_status, is_admin')
+    .select('registration_status, is_admin, is_active')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -56,6 +56,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/register/rejected', request.url))
   }
 
+  if (
+    profile.registration_status === 'approved' &&
+    profile.is_active === false &&
+    request.nextUrl.pathname !== '/suspended'
+  ) {
+    return NextResponse.redirect(new URL('/suspended', request.url))
+  }
+
   return response
 }
 
@@ -65,5 +73,6 @@ export const config = {
     '/account/:path*',
     '/property/:path*',
     '/admin/:path*',
+    '/suspended',
   ],
 }

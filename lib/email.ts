@@ -100,6 +100,69 @@ export async function sendSuspensionEmail(
   })
 }
 
+export async function sendReinstateEmail(to: string, name: string) {
+  await resend.emails.send({
+    from: 'placeholder@placeholder.com',
+    to,
+    subject: 'Your Account Has Been Reinstated',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Account Reinstated</h2>
+        <p>Hi ${name},</p>
+        <p>Your account on the Property Review Platform has been reinstated
+        and you now have full access to the platform.</p>
+        <p>If you have any questions, contact us at
+          <a href="mailto:placeholder@placeholder.com">
+            placeholder@placeholder.com
+          </a>
+        </p>
+      </div>
+    `
+  })
+}
+
+export async function sendReviewsHiddenEmail(to: string, name: string) {
+  await resend.emails.send({
+    from: 'placeholder@placeholder.com',
+    to,
+    subject: 'Your Reviews Have Been Hidden',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Reviews Hidden</h2>
+        <p>Hi ${name},</p>
+        <p>Your reviews on the Property Review Platform have been hidden
+        pending a review of your account.</p>
+        <p>If you have any questions, contact us at
+          <a href="mailto:placeholder@placeholder.com">
+            placeholder@placeholder.com
+          </a>
+        </p>
+      </div>
+    `
+  })
+}
+
+export async function sendReviewsRestoredEmail(to: string, name: string) {
+  await resend.emails.send({
+    from: 'placeholder@placeholder.com',
+    to,
+    subject: 'Your Reviews Have Been Restored',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2>Reviews Restored</h2>
+        <p>Hi ${name},</p>
+        <p>Your reviews on the Property Review Platform have been restored
+        and are now visible to other users.</p>
+        <p>If you have any questions, contact us at
+          <a href="mailto:placeholder@placeholder.com">
+            placeholder@placeholder.com
+          </a>
+        </p>
+      </div>
+    `
+  })
+}
+
 export async function sendReactivationEmail(to: string, name: string) {
   await resend.emails.send({
     from: 'placeholder@placeholder.com',

@@ -105,12 +105,15 @@ type Review = {
   users: {
     display_name: string
     company_name: string
+    reviews_hidden: boolean
     business_types: { label: string } | null
   } | null
   review_payment_tactics: { payment_tactics: { label: string } | null }[]
   review_red_flags: { red_flags: { label: string } | null }[]
   review_client_pattern_tags: { client_pattern_tags: { label: string } | null }[]
 }
+
+type ActiveTab = 'summary' | 'details' | 'reviews'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -198,19 +201,9 @@ function Pill({ label, bg, color }: { label: string; bg: string; color: string }
   )
 }
 
-// ─── Chevron icon ─────────────────────────────────────────────────────────────
+// ─── Tab bar height constant ──────────────────────────────────────────────────
 
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      width="16" height="16" viewBox="0 0 24 24" fill="none"
-      stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ flexShrink: 0, transition: 'transform 0.2s ease', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  )
-}
+const TAB_H = 44
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -229,7 +222,7 @@ export default function PropertyDetailPage() {
   const [reviews, setReviews] = useState<Review[]>([])
   const [userHistory, setUserHistory] = useState<UserHistoryItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [parcelOpen, setParcelOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<ActiveTab>('summary')
 
   useEffect(() => {
     if (fetchedRef.current === id) return
@@ -301,7 +294,7 @@ export default function PropertyDetailPage() {
           primary_contact_name, primary_contact_is_owner, contractor_role, would_work_again,
           watch_out_for, what_worked_well,
           title, body, created_at, updated_at,
-          users!reviews_user_id_fkey ( display_name, company_name, business_types ( label ) ),
+          users!reviews_user_id_fkey!inner ( display_name, company_name, reviews_hidden, business_types ( label ) ),
           review_payment_tactics ( payment_tactics ( label ) ),
           review_red_flags ( red_flags ( label ) ),
           review_client_pattern_tags ( client_pattern_tags ( label ) )
@@ -311,7 +304,8 @@ export default function PropertyDetailPage() {
         .order('updated_at', { ascending: false })
 
       if (reviewData) {
-        setReviews(reviewData as unknown as Review[])
+        const visible = (reviewData as any[]).filter(r => !r.users?.reviews_hidden)
+        setReviews(visible as unknown as Review[])
       }
 
       const { data: historyData } = await supabase
@@ -348,7 +342,7 @@ export default function PropertyDetailPage() {
 
   if (!property) return null
 
-  // ─── Derived values for At a Glance ────────────────────────────────────────
+  // ─── Derived values ─────────────────────────────────────────────────────────
 
   const reviewCount = propertyProfile?.review_count ?? 0
 
@@ -386,8 +380,6 @@ export default function PropertyDetailPage() {
     { label: 'safety challenge reports',        count: pp.flag_safety_challenges_count,    serious: true,  prefix: '⚠️' },
   ].filter(f => f.count > 0) : []
 
-  // ─── Parcel Details internal sections ──────────────────────────────────────
-
   const taxableVsAppraisedDiffers =
     property.taxable_land_value != null &&
     property.appraised_land_value != null &&
@@ -412,228 +404,325 @@ export default function PropertyDetailPage() {
   const submittedHistory = userHistory.filter(r => r.status === 'submitted')
   const draft = userHistory.find(r => r.status === 'draft')
 
+  // ─── Leave a Review button (reused in two tabs) ──────────────────────────────
+
+  const LeaveReviewButton = () => (
+    <button
+      onClick={() => router.push(`/property/${id}/review`)}
+      style={{
+        padding: '0.5rem 1rem', backgroundColor: '#2563eb', color: 'white',
+        border: 'none', borderRadius: '8px', cursor: 'pointer',
+        fontSize: '0.875rem', fontWeight: '500', minHeight: '44px',
+      }}
+    >
+      + Leave a Review
+    </button>
+  )
+
+  // ─── Tab definitions ─────────────────────────────────────────────────────────
+
+  const tabs: { id: ActiveTab; label: string; shortLabel: string }[] = [
+    { id: 'summary',  label: 'Summary',          shortLabel: 'Summary' },
+    { id: 'details',  label: 'Property Details',  shortLabel: 'Details' },
+    { id: 'reviews',  label: reviews.length > 0 ? `Reviews ${reviews.length}` : 'Reviews', shortLabel: reviews.length > 0 ? `Reviews ${reviews.length}` : 'Reviews' },
+  ]
+
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb', paddingTop: NAV_H }}>
-      <AppHeader isAdmin={navProfile?.is_admin ?? false} displayName={navProfile?.display_name ?? ''} showSearch onSearchSelect={handleSearchSelect} />
+    <div style={{ minHeight: '100vh', backgroundColor: '#f9fafb' }}>
+      <AppHeader
+        isAdmin={navProfile?.is_admin ?? false}
+        displayName={navProfile?.display_name ?? ''}
+        showSearch
+        onSearchSelect={handleSearchSelect}
+      />
 
-      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '1.5rem 1rem' }}>
-
-        {/* Back button */}
-        <button
-          onClick={() => {
-            const dashboardUrl = sessionStorage.getItem('dashboardUrl')
-            router.push(dashboardUrl ?? '/dashboard')
-          }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '0.5rem',
-            background: 'none', border: 'none', color: '#2563eb',
-            cursor: 'pointer', fontSize: '0.875rem', marginBottom: '1rem', padding: 0,
-          }}
-        >
-          ← Back to Map
-        </button>
-
-        {/* ── PART 1: Property Header ── */}
-        <div style={{
-          backgroundColor: 'white', borderRadius: '12px',
-          border: '1px solid #e5e7eb', padding: '1.5rem',
-          marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        }}>
-          {/* Address row + Leave a Review button */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.2rem' }}>
-            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700', color: '#111827', lineHeight: 1.25 }}>
-              {property.address_full}
-            </h1>
-            <button
-              onClick={() => router.push(`/property/${id}/review`)}
-              style={{
-                flexShrink: 0,
-                padding: '0.5rem 1rem', backgroundColor: '#2563eb', color: 'white',
-                border: 'none', borderRadius: '8px', cursor: 'pointer',
-                fontSize: '0.875rem', fontWeight: '500', minHeight: '44px',
-              }}
-            >
-              + Leave a Review
-            </button>
-          </div>
-
-          {/* City / State / Zip */}
-          <p style={{ margin: '0 0 1.25rem', color: '#6b7280', fontSize: '0.95rem' }}>
-            {property.city}, {property.state} {property.zip_code}
-            {property.is_unincorporated && (
-              <span style={{
-                marginLeft: '0.5rem', fontSize: '0.75rem',
-                backgroundColor: '#f3f4f6', color: '#6b7280',
-                padding: '0.1rem 0.5rem', borderRadius: '9999px',
-              }}>
-                Unincorporated
-              </span>
-            )}
-          </p>
-
-          {/* Star rating summary */}
-          {reviewCount > 0 ? (
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.3rem' }}>
-                <StarDisplay rating={propertyProfile?.avg_overall_rating ?? null} size={26} showEmpty />
-                {propertyProfile?.avg_overall_rating != null && (
-                  <span style={{ fontSize: '1.15rem', fontWeight: '700', color: '#111827' }}>
-                    {propertyProfile.avg_overall_rating.toFixed(1)}
-                  </span>
-                )}
-                <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>average</span>
-              </div>
-              <p style={{ margin: 0, fontSize: '0.825rem', color: '#9ca3af' }}>
-                {reviewCount} contractor review{reviewCount !== 1 ? 's' : ''}
-              </p>
-            </div>
-          ) : (
-            <p style={{ margin: 0, fontSize: '0.875rem', color: '#9ca3af' }}>No reviews yet</p>
-          )}
+      {/* ── Fixed address header + tab bar ── */}
+      <div style={{
+        position: 'fixed',
+        top: NAV_H,
+        left: 0, right: 0,
+        zIndex: 100,
+        backgroundColor: 'white',
+        borderBottom: '1px solid #e5e7eb',
+      }}>
+        {/* Address strip */}
+        <div style={{ padding: '0.75rem 1rem 0', maxWidth: '800px', margin: '0 auto' }}>
+          <button
+            onClick={() => {
+              const dashboardUrl = sessionStorage.getItem('dashboardUrl')
+              router.push(dashboardUrl ?? '/dashboard')
+            }}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+              background: 'none', border: 'none', color: '#2563eb',
+              cursor: 'pointer', fontSize: '0.8rem', padding: 0, marginBottom: '0.4rem',
+            }}
+          >
+            ← Back to Map
+          </button>
+          <h1 style={{
+            margin: 0,
+            fontSize: '1.05rem', fontWeight: '700', color: '#111827',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {property.address_full}
+          </h1>
         </div>
 
-        {/* ── PART 2: At a Glance ── */}
-        {reviewCount > 0 && (
-          <div style={{
-            backgroundColor: 'white', borderRadius: '12px',
-            border: '1px solid #e5e7eb', padding: '1.5rem',
-            marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-          }}>
-            <h2 style={{ margin: '0 0 1.25rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
-              At a Glance
-            </h2>
+        {/* Tab bar */}
+        <div style={{
+          display: 'flex',
+          maxWidth: '800px',
+          margin: '0 auto',
+          padding: '0 1rem',
+          gap: '0',
+        }}>
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  height: TAB_H,
+                  padding: '0 1rem',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
+                  cursor: 'pointer',
+                  fontSize: '0.875rem',
+                  fontWeight: isActive ? '600' : '400',
+                  color: isActive ? '#2563eb' : '#6b7280',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                }}
+              >
+                {/* Full label on wider screens, short label on narrow */}
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.shortLabel}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
-            {/* Would Work Again */}
-            <div style={{ marginBottom: '1.25rem' }}>
-              <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
-                Would Work Again
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                {wwaYes > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: '#166534', fontWeight: '500' }}>✓</span>
-                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would work again:</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#166534' }}>{wwaYes}</span>
-                  </div>
-                )}
-                {wwaNo > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: '#991b1b', fontWeight: '500' }}>✕</span>
-                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would not work again:</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#991b1b' }}>{wwaNo}</span>
-                  </div>
-                )}
-                {wwaTerms > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontSize: '0.875rem', color: '#92400e', fontWeight: '500' }}>~</span>
-                    <span style={{ fontSize: '0.875rem', color: '#374151' }}>Only with stricter terms:</span>
-                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#92400e' }}>{wwaTerms}</span>
-                  </div>
-                )}
-                {wwaYes === 0 && wwaNo === 0 && wwaTerms === 0 && (
-                  <span style={{ fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>Not recorded</span>
-                )}
+      {/* ── Scrollable content area — pushed below fixed header ── */}
+      <div style={{
+        maxWidth: '800px',
+        margin: '0 auto',
+        padding: `${NAV_H + TAB_H + 56 + 24}px 1rem 2rem`,
+      }}>
+
+        {/* ══ SUMMARY TAB ══ */}
+        {activeTab === 'summary' && (
+          <div>
+            {/* Property header card */}
+            <div style={{
+              backgroundColor: 'white', borderRadius: '12px',
+              border: '1px solid #e5e7eb', padding: '1.5rem',
+              marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', marginBottom: '0.2rem' }}>
+                <div>
+                  <p style={{ margin: '0 0 0.2rem', color: '#6b7280', fontSize: '0.9rem' }}>
+                    {property.city}, {property.state} {property.zip_code}
+                    {property.is_unincorporated && (
+                      <span style={{
+                        marginLeft: '0.5rem', fontSize: '0.75rem',
+                        backgroundColor: '#f3f4f6', color: '#6b7280',
+                        padding: '0.1rem 0.5rem', borderRadius: '9999px',
+                      }}>
+                        Unincorporated
+                      </span>
+                    )}
+                  </p>
+                  {reviewCount > 0 ? (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.3rem' }}>
+                        <StarDisplay rating={propertyProfile?.avg_overall_rating ?? null} size={26} showEmpty />
+                        {propertyProfile?.avg_overall_rating != null && (
+                          <span style={{ fontSize: '1.15rem', fontWeight: '700', color: '#111827' }}>
+                            {propertyProfile.avg_overall_rating.toFixed(1)}
+                          </span>
+                        )}
+                        <span style={{ fontSize: '0.9rem', color: '#6b7280' }}>average</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.825rem', color: '#9ca3af' }}>
+                        {reviewCount} contractor review{reviewCount !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  ) : (
+                    <p style={{ margin: '0.75rem 0 0', fontSize: '0.875rem', color: '#9ca3af' }}>No reviews yet</p>
+                  )}
+                </div>
+                <LeaveReviewButton />
               </div>
             </div>
 
-            {/* Section rating averages */}
-            {glanceAverages.length > 0 && (
-              <>
-                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+            {/* At a Glance */}
+            {reviewCount > 0 && (
+              <div style={{
+                backgroundColor: 'white', borderRadius: '12px',
+                border: '1px solid #e5e7eb', padding: '1.5rem',
+                marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+              }}>
+                <h2 style={{ margin: '0 0 1.25rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
+                  At a Glance
+                </h2>
+
+                {/* Would Work Again */}
                 <div style={{ marginBottom: '1.25rem' }}>
                   <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
-                    Section Averages
+                    Would Work Again
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {glanceAverages.map(s => (
-                      <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.875rem', color: '#374151' }}>{s.label}</span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-                          <StarDisplay rating={s.avg} size={14} />
-                          <span style={{ fontSize: '0.8rem', color: '#6b7280', minWidth: '2rem', textAlign: 'right' }}>{s.avg.toFixed(1)}</span>
-                        </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {wwaYes > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.875rem', color: '#166534', fontWeight: '500' }}>✓</span>
+                        <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would work again:</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#166534' }}>{wwaYes}</span>
                       </div>
-                    ))}
+                    )}
+                    {wwaNo > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.875rem', color: '#991b1b', fontWeight: '500' }}>✕</span>
+                        <span style={{ fontSize: '0.875rem', color: '#374151' }}>Would not work again:</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#991b1b' }}>{wwaNo}</span>
+                      </div>
+                    )}
+                    {wwaTerms > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.875rem', color: '#92400e', fontWeight: '500' }}>~</span>
+                        <span style={{ fontSize: '0.875rem', color: '#374151' }}>Only with stricter terms:</span>
+                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#92400e' }}>{wwaTerms}</span>
+                      </div>
+                    )}
+                    {wwaYes === 0 && wwaNo === 0 && wwaTerms === 0 && (
+                      <span style={{ fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>Not recorded</span>
+                    )}
                   </div>
                 </div>
-              </>
+
+                {/* Section rating averages */}
+                {glanceAverages.length > 0 && (
+                  <>
+                    <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                        Section Averages
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {glanceAverages.map(s => (
+                          <div key={s.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.875rem', color: '#374151' }}>{s.label}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                              <StarDisplay rating={s.avg} size={14} />
+                              <span style={{ fontSize: '0.8rem', color: '#6b7280', minWidth: '2rem', textAlign: 'right' }}>{s.avg.toFixed(1)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Flag counts */}
+                {flagItems.length > 0 && (
+                  <>
+                    <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                    <div style={{ marginBottom: '1.25rem' }}>
+                      <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                        Reported Issues
+                      </p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {flagItems.map(f => (
+                          <div key={f.label} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                            backgroundColor: f.serious ? '#fef2f2' : '#fffbeb',
+                            border: `1px solid ${f.serious ? '#fecaca' : '#fde68a'}`,
+                            borderRadius: '8px',
+                            padding: '0.4rem 0.75rem',
+                            alignSelf: 'flex-start',
+                          }}>
+                            {f.prefix && <span style={{ fontSize: '0.875rem' }}>{f.prefix}</span>}
+                            <span style={{ fontSize: '0.875rem', fontWeight: '600', color: f.serious ? '#991b1b' : '#92400e' }}>
+                              {f.count}
+                            </span>
+                            <span style={{ fontSize: '0.875rem', color: f.serious ? '#991b1b' : '#92400e' }}>
+                              {f.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Top client pattern tags */}
+                {topTags.length > 0 && (
+                  <>
+                    <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
+                    <div>
+                      <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
+                        Common Tags
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {topTags.map((tag, i) => (
+                          <Pill key={i} label={tag} bg="#f3f4f6" color="#374151" />
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
 
-            {/* Flag counts */}
-            {flagItems.length > 0 && (
-              <>
-                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
-                <div style={{ marginBottom: '1.25rem' }}>
-                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
-                    Reported Issues
+            {/* Your History Banner */}
+            {(submittedHistory.length > 0 || draft) && (
+              <div style={{
+                backgroundColor: 'white', borderRadius: '12px',
+                border: '1px solid #e5e7eb', padding: '1.25rem 1.5rem',
+                marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+              }}>
+                <p style={{ margin: '0 0 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Your History
+                </p>
+                <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+                  My Reviews for this property: <span style={{ fontWeight: '500' }}>{submittedHistory.length}</span>
+                </p>
+                {submittedHistory.length > 0 && (
+                  <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
+                    Last Review: <span style={{ fontWeight: '500' }}>{formatDate(submittedHistory[0].updated_at)}</span>
                   </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    {flagItems.map(f => (
-                      <div key={f.label} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
-                        backgroundColor: f.serious ? '#fef2f2' : '#fffbeb',
-                        border: `1px solid ${f.serious ? '#fecaca' : '#fde68a'}`,
-                        borderRadius: '8px',
-                        padding: '0.4rem 0.75rem',
-                        alignSelf: 'flex-start',
-                      }}>
-                        {f.prefix && <span style={{ fontSize: '0.875rem' }}>{f.prefix}</span>}
-                        <span style={{ fontSize: '0.875rem', fontWeight: '600', color: f.serious ? '#991b1b' : '#92400e' }}>
-                          {f.count}
-                        </span>
-                        <span style={{ fontSize: '0.875rem', color: f.serious ? '#991b1b' : '#92400e' }}>
-                          {f.label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Top client pattern tags */}
-            {topTags.length > 0 && (
-              <>
-                <div style={{ height: '1px', backgroundColor: '#f3f4f6', margin: '0 0 1.25rem' }} />
-                <div>
-                  <p style={{ margin: '0 0 0.5rem', fontSize: '0.72rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>
-                    Common Tags
+                )}
+                {draft && (
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#92400e', lineHeight: '1.6' }}>
+                    ⚠️ You have a draft in progress —{' '}
+                    <button
+                      onClick={() => router.push(`/property/${id}/review?draftId=${draft.id}`)}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#d97706', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', textDecoration: 'underline' }}
+                    >
+                      Resume draft
+                    </button>
                   </p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                    {topTags.map((tag, i) => (
-                      <Pill key={i} label={tag} bg="#f3f4f6" color="#374151" />
-                    ))}
-                  </div>
-                </div>
-              </>
+                )}
+              </div>
             )}
           </div>
         )}
 
-        {/* ── PART 3: Parcel Details (collapsible) ── */}
-        <div style={{
-          backgroundColor: 'white', borderRadius: '12px',
-          border: '1px solid #e5e7eb',
-          marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-          overflow: 'hidden',
-        }}>
-          <button
-            onClick={() => setParcelOpen(o => !o)}
-            style={{
-              width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '1.25rem 1.5rem',
-              background: 'none', border: 'none', cursor: 'pointer',
-              textAlign: 'left',
-            }}
-          >
-            <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: '600', color: '#111827' }}>Parcel Details</h2>
-            <Chevron open={parcelOpen} />
-          </button>
-
-          {parcelOpen && (
-            <div style={{ borderTop: '1px solid #e5e7eb', padding: '1.5rem' }}>
-
+        {/* ══ PROPERTY DETAILS TAB ══ */}
+        {activeTab === 'details' && (
+          <div>
+            <div style={{
+              backgroundColor: 'white', borderRadius: '12px',
+              border: '1px solid #e5e7eb', padding: '1.5rem',
+              marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
               {/* Key facts grid */}
+              <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
+                Parcel Information
+              </h2>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
                 {[
                   { label: 'Present Use',        value: property.present_use || 'N/A' },
@@ -663,7 +752,6 @@ export default function PropertyDetailPage() {
               {(taxableVsAppraisedDiffers || detailRows.length > 0) && (
                 <>
                   <div style={{ height: '1px', backgroundColor: '#f3f4f6', marginBottom: '1.25rem' }} />
-
                   {taxableVsAppraisedDiffers && (
                     <div style={{
                       backgroundColor: '#fffbeb', border: '1px solid #fde68a',
@@ -673,9 +761,8 @@ export default function PropertyDetailPage() {
                       Taxable value differs from appraised — exemption may apply
                     </div>
                   )}
-
                   {detailRows.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                       {detailRows.map(row => (
                         <div key={row.label}>
                           <p style={{ margin: '0 0 0.15rem', fontSize: '0.75rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -690,12 +777,17 @@ export default function PropertyDetailPage() {
                   )}
                 </>
               )}
+            </div>
 
-              {/* Public Records links */}
-              <div style={{ height: '1px', backgroundColor: '#f3f4f6', marginBottom: '1.25rem' }} />
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {/* Public Records */}
+            <div style={{
+              backgroundColor: 'white', borderRadius: '12px',
+              border: '1px solid #e5e7eb', padding: '1.5rem',
+              marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+              <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: '600', color: '#111827' }}>
                 Public Records
-              </p>
+              </h2>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {property.parcel_number && (
                   <a
@@ -754,295 +846,256 @@ export default function PropertyDetailPage() {
                 </a>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* ── PART 4: Contractor Reviews ── */}
-
-        {/* Your History Banner */}
-        {(submittedHistory.length > 0 || draft) && (
-          <div style={{
-            backgroundColor: 'white', borderRadius: '12px',
-            border: '1px solid #e5e7eb', padding: '1.25rem 1.5rem',
-            marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-          }}>
-            <p style={{ margin: '0 0 1rem', fontSize: '0.75rem', fontWeight: '700', color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Your History
-            </p>
-            <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
-              My Reviews for this property: <span style={{ fontWeight: '500' }}>{submittedHistory.length}</span>
-            </p>
-            {submittedHistory.length > 0 && (
-              <p style={{ margin: '0 0 0.6rem', fontSize: '0.9rem', color: '#374151', lineHeight: '1.6' }}>
-                Last Review: <span style={{ fontWeight: '500' }}>{formatDate(submittedHistory[0].updated_at)}</span>
-              </p>
-            )}
-            {draft && (
-              <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#92400e', lineHeight: '1.6' }}>
-                ⚠️ You have a draft in progress —{' '}
-                <button
-                  onClick={() => router.push(`/property/${id}/review?draftId=${draft.id}`)}
-                  style={{ background: 'none', border: 'none', padding: 0, color: '#d97706', cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500', textDecoration: 'underline' }}
-                >
-                  Resume draft
-                </button>
-              </p>
-            )}
           </div>
         )}
 
-        {/* Reviews section heading */}
-        <div style={{ marginBottom: '1rem' }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
-            Contractor Reviews
-            {reviews.length > 0 && (
-              <span style={{
-                marginLeft: '0.5rem', fontSize: '0.875rem',
-                backgroundColor: '#dbeafe', color: '#1d4ed8',
-                padding: '0.1rem 0.6rem', borderRadius: '9999px', fontWeight: '500',
-              }}>
-                {reviews.length}
-              </span>
-            )}
-          </h2>
-        </div>
+        {/* ══ REVIEWS TAB ══ */}
+        {activeTab === 'reviews' && (
+          <div>
+            {/* Reviews heading + Leave a Review */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600' }}>
+                Contractor Reviews
+                {reviews.length > 0 && (
+                  <span style={{
+                    marginLeft: '0.5rem', fontSize: '0.875rem',
+                    backgroundColor: '#dbeafe', color: '#1d4ed8',
+                    padding: '0.1rem 0.6rem', borderRadius: '9999px', fontWeight: '500',
+                  }}>
+                    {reviews.length}
+                  </span>
+                )}
+              </h2>
+              <LeaveReviewButton />
+            </div>
 
-        {/* No Reviews State */}
-        {reviews.length === 0 && (
-          <div style={{
-            backgroundColor: 'white', borderRadius: '12px',
-            border: '1px solid #e5e7eb', padding: '2rem',
-            textAlign: 'center', color: '#6b7280',
-          }}>
-            <p style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>No reviews yet for this property.</p>
-            <p style={{ margin: 0, fontSize: '0.875rem' }}>Be the first contractor to leave a review.</p>
-          </div>
-        )}
-
-        {/* Review Cards */}
-        {reviews.map(review => {
-          const roleLabel = formatRoleLabel(review.contractor_role)
-          const businessTypeLabel = review.users?.business_types?.label ?? null
-
-          const jobContextParts = [
-            review.job_size,
-            review.completed_project != null ? `Completed: ${review.completed_project ? 'Yes' : 'No'}` : null,
-            formatMonthYear(review.job_completion_date),
-          ].filter(Boolean) as string[]
-
-          const reviewerLine = [businessTypeLabel, roleLabel].filter(Boolean).join(' · ')
-
-          const sections = [
-            { label: 'Payment & Financial',     ratings: [review.payment_timeliness, review.ease_of_collecting_payment, review.final_payment_experience] },
-            { label: 'Scope & Change',           ratings: [review.scope_clarity, review.change_order_willingness] },
-            { label: 'Communication',            ratings: [review.ease_of_interaction, review.responsiveness, review.professionalism, review.decision_consistency] },
-            { label: 'Timeline & Preparedness',  ratings: [review.timeline_expectations, review.plan_design_readiness, review.financial_readiness] },
-            { label: 'Site Conditions',          ratings: [review.site_accessibility] },
-          ].map(s => ({ label: s.label, avg: avgRating(s.ratings) }))
-           .filter(s => s.avg != null) as { label: string; avg: number }[]
-
-          const clientTags = (review.review_client_pattern_tags ?? []).map(t => t.client_pattern_tags?.label).filter(Boolean) as string[]
-          const paymentTactics = (review.review_payment_tactics ?? []).map(t => t.payment_tactics?.label).filter(Boolean) as string[]
-          const redFlags = (review.review_red_flags ?? []).map(t => t.red_flags?.label).filter(Boolean) as string[]
-
-          return (
-            <div
-              key={review.id}
-              style={{
+            {/* No Reviews State */}
+            {reviews.length === 0 && (
+              <div style={{
                 backgroundColor: 'white', borderRadius: '12px',
-                border: '1px solid #e5e7eb', marginBottom: '1rem',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden',
-              }}
-            >
-              {/* 1. No Call / No Show Banner */}
-              {review.no_call_no_show && (
-                <div style={{
-                  backgroundColor: '#dc2626', color: 'white',
-                  padding: '0.625rem 1.25rem',
-                  fontSize: '0.875rem', fontWeight: '600',
-                }}>
-                  ⚠️ No Call / No Show reported
-                </div>
-              )}
+                border: '1px solid #e5e7eb', padding: '2rem',
+                textAlign: 'center', color: '#6b7280',
+              }}>
+                <p style={{ margin: '0 0 0.5rem', fontSize: '1rem' }}>No reviews yet for this property.</p>
+                <p style={{ margin: 0, fontSize: '0.875rem' }}>Be the first contractor to leave a review.</p>
+              </div>
+            )}
 
-              <div style={{ padding: '1.25rem 1.5rem' }}>
+            {/* Review Cards */}
+            {reviews.map(review => {
+              const roleLabel = formatRoleLabel(review.contractor_role)
+              const businessTypeLabel = review.users?.business_types?.label ?? null
 
-                {/* 2. Card Header Row */}
-                <div style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem',
-                  marginBottom: '0.5rem',
-                }}>
-                  {/* Left: stacked REVIEWER + CLIENT CONTACT rows */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+              const jobContextParts = [
+                review.job_size,
+                review.completed_project != null ? `Completed: ${review.completed_project ? 'Yes' : 'No'}` : null,
+                formatMonthYear(review.job_completion_date),
+              ].filter(Boolean) as string[]
 
-                    {/* REVIEWER row */}
-                    <div>
-                      <p style={{ margin: '0 0 0.15rem', fontSize: '0.62rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: '600' }}>
-                        Reviewer
-                      </p>
-                      {reviewerLine
-                        ? <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151' }}>{reviewerLine}</p>
-                        : <p style={{ margin: 0, fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>Unknown</p>
-                      }
-                    </div>
+              const reviewerLine = [businessTypeLabel, roleLabel].filter(Boolean).join(' · ')
 
-                    {/* CLIENT CONTACT row */}
-                    <div>
-                      <p style={{ margin: '0 0 0.15rem', fontSize: '0.62rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: '600' }}>
-                        Client Contact
-                      </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                        {review.primary_contact_name
-                          ? <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#111827' }}>{review.primary_contact_name}</span>
-                          : <span style={{ fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>No contact recorded</span>
-                        }
-                        {review.primary_contact_is_owner != null && (
-                          <span style={{
-                            backgroundColor: review.primary_contact_is_owner ? '#eff6ff' : '#f9fafb',
-                            color: review.primary_contact_is_owner ? '#1d4ed8' : '#6b7280',
-                            border: `1px solid ${review.primary_contact_is_owner ? '#bfdbfe' : '#e5e7eb'}`,
-                            padding: '0.1rem 0.5rem', borderRadius: '9999px',
-                            fontSize: '0.68rem', fontWeight: '500',
-                          }}>
-                            {review.primary_contact_is_owner ? 'Owner' : 'Not Owner'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+              const sections = [
+                { label: 'Payment & Financial',     ratings: [review.payment_timeliness, review.ease_of_collecting_payment, review.final_payment_experience] },
+                { label: 'Scope & Change',           ratings: [review.scope_clarity, review.change_order_willingness] },
+                { label: 'Communication',            ratings: [review.ease_of_interaction, review.responsiveness, review.professionalism, review.decision_consistency] },
+                { label: 'Timeline & Preparedness',  ratings: [review.timeline_expectations, review.plan_design_readiness, review.financial_readiness] },
+                { label: 'Site Conditions',          ratings: [review.site_accessibility] },
+              ].map(s => ({ label: s.label, avg: avgRating(s.ratings) }))
+               .filter(s => s.avg != null) as { label: string; avg: number }[]
 
-                  </div>
+              const clientTags = (review.review_client_pattern_tags ?? []).map(t => t.client_pattern_tags?.label).filter(Boolean) as string[]
+              const paymentTactics = (review.review_payment_tactics ?? []).map(t => t.payment_tactics?.label).filter(Boolean) as string[]
+              const redFlags = (review.review_red_flags ?? []).map(t => t.red_flags?.label).filter(Boolean) as string[]
 
-                  {/* Right: Would Work Again badge */}
-                  {review.would_work_again && (
-                    <div>
-                      {review.would_work_again === 'yes' && (
-                        <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
-                          Would work again ✓
-                        </span>
-                      )}
-                      {review.would_work_again === 'no' && (
-                        <span style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
-                          Would not work again
-                        </span>
-                      )}
-                      {review.would_work_again === 'higher_price_stricter_terms' && (
-                        <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
-                          Only with stricter terms
-                        </span>
-                      )}
+              return (
+                <div
+                  key={review.id}
+                  style={{
+                    backgroundColor: 'white', borderRadius: '12px',
+                    border: '1px solid #e5e7eb', marginBottom: '1rem',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden',
+                  }}
+                >
+                  {/* 1. No Call / No Show Banner */}
+                  {review.no_call_no_show && (
+                    <div style={{
+                      backgroundColor: '#dc2626', color: 'white',
+                      padding: '0.625rem 1.25rem',
+                      fontSize: '0.875rem', fontWeight: '600',
+                    }}>
+                      ⚠️ No Call / No Show reported
                     </div>
                   )}
-                </div>
 
-                {/* 3. Job Context Row */}
-                {jobContextParts.length > 0 && (
-                  <p style={{ margin: '0 0 0.875rem', fontSize: '0.78rem', color: '#9ca3af' }}>
-                    {jobContextParts.join(' · ')}
-                  </p>
-                )}
+                  <div style={{ padding: '1.25rem 1.5rem' }}>
 
-                {/* 4. Overall Star Rating */}
-                {review.overall_rating != null && (
-                  <div style={{ marginBottom: '1rem' }}>
-                    <p style={{ margin: '0 0 0.25rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      Overall Rating
-                    </p>
-                    <StarDisplay rating={review.overall_rating} size={22} />
-                  </div>
-                )}
-
-                {/* 5. Section Ratings */}
-                {sections.length > 0 && (
-                  <div style={{
-                    backgroundColor: '#f9fafb', borderRadius: '8px',
-                    padding: '0.75rem', marginBottom: '1rem',
-                  }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {sections.map(section => (
-                        <div key={section.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{section.label}</span>
-                          <StarDisplay rating={section.avg} size={14} />
+                    {/* 2. Card Header Row */}
+                    <div style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem',
+                      marginBottom: '0.5rem',
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                        <div>
+                          <p style={{ margin: '0 0 0.15rem', fontSize: '0.62rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: '600' }}>
+                            Reviewer
+                          </p>
+                          {reviewerLine
+                            ? <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151' }}>{reviewerLine}</p>
+                            : <p style={{ margin: 0, fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>Unknown</p>
+                          }
                         </div>
-                      ))}
+                        <div>
+                          <p style={{ margin: '0 0 0.15rem', fontSize: '0.62rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: '600' }}>
+                            Client Contact
+                          </p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            {review.primary_contact_name
+                              ? <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#111827' }}>{review.primary_contact_name}</span>
+                              : <span style={{ fontSize: '0.875rem', color: '#9ca3af', fontStyle: 'italic' }}>No contact recorded</span>
+                            }
+                            {review.primary_contact_is_owner != null && (
+                              <span style={{
+                                backgroundColor: review.primary_contact_is_owner ? '#eff6ff' : '#f9fafb',
+                                color: review.primary_contact_is_owner ? '#1d4ed8' : '#6b7280',
+                                border: `1px solid ${review.primary_contact_is_owner ? '#bfdbfe' : '#e5e7eb'}`,
+                                padding: '0.1rem 0.5rem', borderRadius: '9999px',
+                                fontSize: '0.68rem', fontWeight: '500',
+                              }}>
+                                {review.primary_contact_is_owner ? 'Owner' : 'Not Owner'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {review.would_work_again && (
+                        <div>
+                          {review.would_work_again === 'yes' && (
+                            <span style={{ backgroundColor: '#dcfce7', color: '#166534', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
+                              Would work again ✓
+                            </span>
+                          )}
+                          {review.would_work_again === 'no' && (
+                            <span style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
+                              Would not work again
+                            </span>
+                          )}
+                          {review.would_work_again === 'higher_price_stricter_terms' && (
+                            <span style={{ backgroundColor: '#fef3c7', color: '#92400e', padding: '0.25rem 0.75rem', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: '600' }}>
+                              Only with stricter terms
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
 
-                {/* 6. Client Pattern Tags */}
-                {clientTags.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
-                    {clientTags.map((tag, i) => (
-                      <Pill key={i} label={tag} bg="#f3f4f6" color="#374151" />
-                    ))}
-                  </div>
-                )}
-
-                {/* 7. Payment Tactics */}
-                {paymentTactics.length > 0 && (
-                  <div style={{ marginBottom: '0.75rem' }}>
-                    <p style={{ margin: '0 0 0.35rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      Payment Tactics
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                      {paymentTactics.map((label, i) => (
-                        <Pill key={i} label={label} bg="#fef3c7" color="#92400e" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. Red Flags */}
-                {redFlags.length > 0 && (
-                  <div style={{ marginBottom: '0.75rem' }}>
-                    <p style={{ margin: '0 0 0.35rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                      Red Flags
-                    </p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-                      {redFlags.map((label, i) => (
-                        <Pill key={i} label={label} bg="#fef2f2" color="#b91c1c" />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* 9. Watch Out For */}
-                {review.watch_out_for && (
-                  <div style={{ borderLeft: '3px solid #f59e0b', paddingLeft: '0.75rem', marginBottom: '0.75rem' }}>
-                    <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', fontWeight: '600', color: '#92400e' }}>Watch out for</p>
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.5 }}>{review.watch_out_for}</p>
-                  </div>
-                )}
-
-                {/* 10. What Worked Well */}
-                {review.what_worked_well && (
-                  <div style={{ borderLeft: '3px solid #16a34a', paddingLeft: '0.75rem', marginBottom: '0.75rem' }}>
-                    <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', fontWeight: '600', color: '#166534' }}>What worked well</p>
-                    <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.5 }}>{review.what_worked_well}</p>
-                  </div>
-                )}
-
-                {/* 11. Review Text */}
-                {(review.title || review.body) && (
-                  <div style={{ marginBottom: '0.75rem' }}>
-                    {review.title && (
-                      <p style={{ margin: '0 0 0.25rem', fontWeight: '600', fontSize: '0.9rem', color: '#111827' }}>{review.title}</p>
+                    {/* 3. Job Context */}
+                    {jobContextParts.length > 0 && (
+                      <p style={{ margin: '0 0 0.875rem', fontSize: '0.78rem', color: '#9ca3af' }}>
+                        {jobContextParts.join(' · ')}
+                      </p>
                     )}
-                    {review.body && (
-                      <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>{review.body}</p>
+
+                    {/* 4. Overall Rating */}
+                    {review.overall_rating != null && (
+                      <div style={{ marginBottom: '1rem' }}>
+                        <p style={{ margin: '0 0 0.25rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          Overall Rating
+                        </p>
+                        <StarDisplay rating={review.overall_rating} size={22} />
+                      </div>
                     )}
+
+                    {/* 5. Section Ratings */}
+                    {sections.length > 0 && (
+                      <div style={{ backgroundColor: '#f9fafb', borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {sections.map(section => (
+                            <div key={section.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.8rem', color: '#6b7280' }}>{section.label}</span>
+                              <StarDisplay rating={section.avg} size={14} />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 6. Client Pattern Tags */}
+                    {clientTags.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
+                        {clientTags.map((tag, i) => (
+                          <Pill key={i} label={tag} bg="#f3f4f6" color="#374151" />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 7. Payment Tactics */}
+                    {paymentTactics.length > 0 && (
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <p style={{ margin: '0 0 0.35rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          Payment Tactics
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {paymentTactics.map((label, i) => (
+                            <Pill key={i} label={label} bg="#fef3c7" color="#92400e" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 8. Red Flags */}
+                    {redFlags.length > 0 && (
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        <p style={{ margin: '0 0 0.35rem', fontSize: '0.68rem', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          Red Flags
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                          {redFlags.map((label, i) => (
+                            <Pill key={i} label={label} bg="#fef2f2" color="#b91c1c" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 9. Watch Out For */}
+                    {review.watch_out_for && (
+                      <div style={{ borderLeft: '3px solid #f59e0b', paddingLeft: '0.75rem', marginBottom: '0.75rem' }}>
+                        <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', fontWeight: '600', color: '#92400e' }}>Watch out for</p>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.5 }}>{review.watch_out_for}</p>
+                      </div>
+                    )}
+
+                    {/* 10. What Worked Well */}
+                    {review.what_worked_well && (
+                      <div style={{ borderLeft: '3px solid #16a34a', paddingLeft: '0.75rem', marginBottom: '0.75rem' }}>
+                        <p style={{ margin: '0 0 0.2rem', fontSize: '0.75rem', fontWeight: '600', color: '#166534' }}>What worked well</p>
+                        <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.5 }}>{review.what_worked_well}</p>
+                      </div>
+                    )}
+
+                    {/* 11. Review Text */}
+                    {(review.title || review.body) && (
+                      <div style={{ marginBottom: '0.75rem' }}>
+                        {review.title && (
+                          <p style={{ margin: '0 0 0.25rem', fontWeight: '600', fontSize: '0.9rem', color: '#111827' }}>{review.title}</p>
+                        )}
+                        {review.body && (
+                          <p style={{ margin: 0, fontSize: '0.875rem', color: '#374151', lineHeight: 1.6 }}>{review.body}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 12. Footer */}
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#9ca3af' }}>
+                      Submitted {formatDateShort(review.updated_at)}
+                    </p>
                   </div>
-                )}
-
-                {/* 12. Card Footer */}
-                <p style={{ margin: 0, fontSize: '0.72rem', color: '#9ca3af' }}>
-                  Submitted {formatDateShort(review.updated_at)}
-                </p>
-
-              </div>
-            </div>
-          )
-        })}
+                </div>
+              )
+            })}
+          </div>
+        )}
 
       </div>
     </div>

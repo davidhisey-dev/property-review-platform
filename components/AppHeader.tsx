@@ -52,6 +52,11 @@ export default function AppHeader({
   const router = useRouter()
   const pathname = usePathname()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackIssueType, setFeedbackIssueType] = useState('')
+  const [feedbackDescription, setFeedbackDescription] = useState('')
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false)
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null)
 
   // ─── Self-contained search state ────────────────────────────────────────────
   // Only active when onSearchSelect is provided. Dashboard mode ignores all of these.
@@ -124,6 +129,44 @@ export default function AppHeader({
     sessionStorage.removeItem('lastSearchResults')
     sessionStorage.removeItem('lastSearchQuery')
     router.push('/')
+  }
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackIssueType || feedbackDescription.trim().length < 20) return
+    setFeedbackSubmitting(true)
+    try {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      console.log('[feedback insert] user:', user?.id, 'payload:', {
+        issue_type: feedbackIssueType,
+        description: feedbackDescription.trim(),
+        page_url: pathname,
+      })
+      const { error } = await supabase.from('feedback').insert({
+        user_id: user.id,
+        issue_type: feedbackIssueType,
+        description: feedbackDescription.trim(),
+        page_url: pathname,
+        status: 'open',
+      })
+      if (error) {
+        console.error('[feedback insert error]', JSON.stringify(error, null, 2))
+        setFeedbackToast('Failed to submit feedback. Please try again.')
+        setTimeout(() => setFeedbackToast(null), 3000)
+        return
+      }
+      setFeedbackOpen(false)
+      setFeedbackIssueType('')
+      setFeedbackDescription('')
+      setFeedbackToast('Feedback submitted — thank you!')
+      setTimeout(() => setFeedbackToast(null), 3000)
+    } catch {
+      setFeedbackToast('Failed to submit feedback. Please try again.')
+      setTimeout(() => setFeedbackToast(null), 3000)
+    } finally {
+      setFeedbackSubmitting(false)
+    }
   }
 
   const navItems = [
@@ -429,6 +472,28 @@ export default function AppHeader({
           ))}
         </nav>
 
+        {/* Report an Issue */}
+        {!hideNav && (
+          <div style={{ padding: '0 8px', borderTop: '1px solid #f3f4f6', flexShrink: 0 }}>
+            <button
+              onClick={() => { setDrawerOpen(false); setFeedbackOpen(true) }}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: 'none',
+                fontSize: '0.9375rem',
+                color: '#374151',
+                cursor: 'pointer',
+                backgroundColor: 'transparent',
+              }}
+            >
+              Report an Issue
+            </button>
+          </div>
+        )}
+
         {/* Sign out */}
         <div style={{ padding: '0 8px', flexShrink: 0 }}>
           <button
@@ -449,6 +514,120 @@ export default function AppHeader({
           </button>
         </div>
       </div>
+
+      {/* ── Feedback modal ── */}
+      {feedbackOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
+            zIndex: 29999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => setFeedbackOpen(false)}
+        >
+          <div
+            style={{
+              backgroundColor: 'white', borderRadius: 12, padding: '1.5rem',
+              maxWidth: 480, width: '100%', boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ margin: '0 0 0.25rem', fontSize: '1.125rem', fontWeight: '700' }}>Report an Issue</h3>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.875rem', color: '#6b7280' }}>
+              Help us improve — tell us what&apos;s wrong.
+            </p>
+
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.375rem' }}>
+              Issue Type *
+            </label>
+            <select
+              value={feedbackIssueType}
+              onChange={(e) => setFeedbackIssueType(e.target.value)}
+              style={{
+                width: '100%', padding: '0.5rem 0.75rem', marginBottom: '1rem',
+                border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem',
+              }}
+            >
+              <option value="">Select a type…</option>
+              <option value="bug">Bug / Technical Problem</option>
+              <option value="wrong_information">Wrong Information</option>
+              <option value="inappropriate_content">Inappropriate Content</option>
+              <option value="other">Other</option>
+            </select>
+
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.375rem' }}>
+              Description * ({feedbackDescription.trim().length}/1000)
+            </label>
+            <textarea
+              rows={5}
+              value={feedbackDescription}
+              onChange={(e) => setFeedbackDescription(e.target.value.slice(0, 1000))}
+              placeholder="Describe the issue in detail…"
+              style={{
+                width: '100%', padding: '0.5rem 0.75rem', marginBottom: '0.25rem',
+                border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem',
+                resize: 'vertical', boxSizing: 'border-box',
+              }}
+            />
+            {feedbackDescription.trim().length > 0 && feedbackDescription.trim().length < 20 && (
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.75rem', color: '#ef4444' }}>
+                Please provide at least 20 characters.
+              </p>
+            )}
+
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', marginBottom: '0.375rem', marginTop: '0.5rem' }}>
+              Page
+            </label>
+            <input
+              readOnly
+              value={pathname}
+              style={{
+                width: '100%', padding: '0.5rem 0.75rem', marginBottom: '1.25rem',
+                border: '1px solid #e5e7eb', borderRadius: 8, fontSize: '0.875rem',
+                backgroundColor: '#f9fafb', color: '#6b7280', boxSizing: 'border-box',
+              }}
+            />
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setFeedbackOpen(false)}
+                style={{
+                  padding: '0.5rem 1rem', border: '1px solid #e5e7eb', borderRadius: 8,
+                  fontSize: '0.875rem', cursor: 'pointer', backgroundColor: 'white',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleFeedbackSubmit}
+                disabled={!feedbackIssueType || feedbackDescription.trim().length < 20 || feedbackSubmitting}
+                style={{
+                  padding: '0.5rem 1rem', border: 'none', borderRadius: 8,
+                  fontSize: '0.875rem', cursor: 'pointer',
+                  backgroundColor: !feedbackIssueType || feedbackDescription.trim().length < 20 || feedbackSubmitting
+                    ? '#93c5fd' : '#2563eb',
+                  color: 'white', fontWeight: '500',
+                }}
+              >
+                {feedbackSubmitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Feedback toast ── */}
+      {feedbackToast && (
+        <div style={{
+          position: 'fixed', bottom: '1.5rem', left: '50%', transform: 'translateX(-50%)',
+          backgroundColor: '#111827', color: 'white', borderRadius: 12,
+          padding: '0.75rem 1.25rem', fontSize: '0.875rem', fontWeight: '500',
+          zIndex: 29999, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+          whiteSpace: 'nowrap',
+        }}>
+          {feedbackToast}
+        </div>
+      )}
     </>
   )
 }

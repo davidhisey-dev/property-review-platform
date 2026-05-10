@@ -69,6 +69,7 @@ type AggregatePin = {
   longitude: number
   reviewCount: number
   avgRating: number | null
+  ncnsCount: number
 }
 
 // ─── Panel offset helpers ─────────────────────────────────────────────────────
@@ -194,7 +195,8 @@ function AggregateMapPin({ color }: { color: string }) {
   )
 }
 
-function aggPinColor(avgRating: number | null): string {
+function aggPinColor(avgRating: number | null, ncnsCount: number): string {
+  if (ncnsCount > 0)        return AGG_PIN_RED
   if (avgRating == null)    return AGG_PIN_GRAY
   if (avgRating >= 4.0)     return AGG_PIN_GREEN
   if (avgRating >= 3.0)     return AGG_PIN_GRAY
@@ -335,7 +337,7 @@ export default function DashboardPage() {
     const fetchAgg = async () => {
       const { data } = await supabase
         .from('property_profiles')
-        .select('property_id, review_count, avg_overall_rating, properties!inner(address_full, latitude, longitude)')
+        .select('property_id, review_count, avg_overall_rating, no_call_no_show_count, properties!inner(address_full, latitude, longitude)')
         .gt('review_count', 0)
         .limit(500)
       if (!data) return
@@ -348,6 +350,7 @@ export default function DashboardPage() {
           longitude: Number(r.properties.longitude),
           reviewCount: r.review_count,
           avgRating: r.avg_overall_rating != null ? Number(r.avg_overall_rating) : null,
+          ncnsCount: r.no_call_no_show_count ?? 0,
         }))
       setAggregatePins(pins)
     }
@@ -825,9 +828,9 @@ export default function DashboardPage() {
             router.replace('/dashboard')
           }}
         >
-          <NavigationControl position="bottom-right" />
+          <NavigationControl position="top-right" />
           <GeolocateControl
-            position="bottom-right"
+            position="top-right"
             trackUserLocation={false}
             showUserHeading={false}
           />
@@ -888,7 +891,7 @@ export default function DashboardPage() {
                 onClick={e => { e.originalEvent.stopPropagation(); setSelectedPin(null); setSelectedAggPin(pin) }}
               >
                 <div style={{ opacity, transition: 'opacity 0.2s ease' }}>
-                  <AggregateMapPin color={aggPinColor(pin.avgRating)} />
+                  <AggregateMapPin color={aggPinColor(pin.avgRating, pin.ncnsCount)} />
                 </div>
               </Marker>
             )
